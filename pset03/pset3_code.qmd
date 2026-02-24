@@ -1,8 +1,8 @@
 ---
-title: "POLI 784 - Problem Set #2"
+title: "POLI 784 - Problem Set #3"
 author: "Nico Cardenas-Miller, Kieran Fitzmason, Otilda Harris"
 date: today
-format: html
+format: pdf
 editor: visual
 ---
 
