@@ -16,11 +16,20 @@ editor: visual
 if (!require("tidyverse")) install.packages("tidyverse")
 if (!require("dagitty")) install.packages("dagitty")
 if (!require("ggdag")) install.packages("ggdag")
+if (!require("MatchIt")) install.packages("MatchIt")
+if (!require("cobalt")) install.packages("cobalt")
+if (!require("patchwork")) install.packages("patchwork")
+if (!require("marginaleffects")) install.packages("marginaleffects")
+
 
 # Load packages into environment
 library(tidyverse)
 library(dagitty)
 library(ggdag)
+library(MatchIt)
+library(cobalt)
+library(patchwork)
+library(marginaleffects)
 ```
 
 ## Part A
@@ -229,3 +238,176 @@ Based on the results of Parts A-F, we can draw the following conclusions:
 -   We should only control for mediators when attempting to isolate direct effects from total effects.
 
 These guidelines assume that our causal DAG is correctly specified and captures all variables that are relevant to the data-generating process (including those that are unobserved). In practice, all models are wrong, and there's always a chance that an important variable or causal relationship was omitted or misspecified. While we can reduce these risks by carefully reviewing the literature and eliciting expert opinion when constructing our DAG, it's impossible to eliminate them completely. As such, it is a good idea to construct multiple DAGs that reflect uncertainties in the structure of the data-generating process. In some cases, it may be possible to design estimation strategies that perform well across multiple representations of the data-generating process.
+
+# Question 2
+
+In this question, we work with data from a study by [Blattman and Annan (2010)](https://chrisblattman.com/documents/research/2010.Consequences.RESTAT.pdf) to evaulate the effects of being abducted by a rebel group on educational outcomes among youth in Northern Uganda.
+
+```{r}
+
+# Load dataset
+rm(list = ls())
+data <- read_csv("data-1.csv")
+```
+
+## Part A
+
+This was an observational study because the treatment assignment—in this case, being abducted by a rebel group—was imposed by circumstances outside the control of the researchers. In order to identify causal effects, this study design makes a crucial assumption known as "strong ignorability," which assumes that that treatment assignment is independent of potential outcomes conditional on a set of observed covariates.
+
+$$
+\{ Y_i(1), Y_i(0)\}\perp D_i | \textbf{X}_i 
+$$
+
+This assumptions allows us to overcome the fundamental problem of causal inference by using control units with similar covariate values as counterfactuals for treated units. When estimating the ATT using a matching estimator, this allows us to impute the missing potential outcome for each treated unit as a weighted average of the observed outcomes of that unit's matched controls.
+
+For this identification assumption to be plausible, the set of covariates $\textbf{X}$ must include all confounders and variables that affect $D$ and $Y$. This means that $\textbf{X}$ should capture all factors that could potentially bias the estimated effect of abduction on education if not accounted for.
+
+## Part B
+
+Here, we examine the covariate balance of the unadjusted data using the following methods:
+
+1.  Conducting balance tests supported by the `matchit()` function.
+
+2.  Creating a love plot of standardized mean differences (SMDs) in covariates between those assigned to treatment and control.
+
+3.  Plotting the eCDFs of covariates for those assigned to treatment and control.
+
+    ```{r}
+
+    # Match on pre-treatment covariates
+    set.cobalt.options(binary = 'std')
+    SMD <- matchit(
+        abd ~ age + fthr_ed + mthr_ed + hh_fthr_frm + hh_size96 + orphan96,
+        data = data,
+        method = NULL,
+        distance = "mahalanobis",
+    )
+    summary(SMD)
+    love.plot(
+        x =SMD,
+        thresholds = c(m = 0.1),
+        abs = TRUE
+        )
+
+    # save names of covariates in vector
+    covariates <- names(data)[!names(data) %in% c("abd", "educ")]
+
+    # plot balance in unadjusted data using eCDFs
+    plots <- list()
+    for (var in covariates) {
+      plots[[var]] <- bal.plot(
+        x = SMD,
+        var.name = var,
+        which = "both",
+        type = "ecdf"
+      ) +
+      ggtitle(var)
+    }
+    plots
+    ```
+
+The results suggest that there are differences in the covariate distributions between the abducted and non-abducted groups, as indicated by the SMDs and the love plot. These differences are most pronounced for age, with the treated units being older on average. It makes sense that this variable would differ between treated and control units since the paper states that the rebel group preferred to abduct males in a specific age range. ECDF plots also show that there are some differences in the distributions of certain covariates between the two groups—most notably for age. This suggests that ignorability may not hold before matching, as there may be confounding variables that are not balanced between the groups.
+
+## Part C
+
+Here, we conduct nearest neighbor matching for estimating the ATT using the Mahalanobis distance, at a 1:1 ratio, with no replacement.
+
+```{r}
+
+# Match on pre-treatment covariates
+SMD_match <- matchit(
+    abd ~ age + fthr_ed + mthr_ed + hh_fthr_frm + hh_size96 + orphan96,
+    data = data,
+    method = "nearest",
+    distance = "mahalanobis",
+    ratio = 1,
+    replace = FALSE
+)
+summary(SMD_match)
+love.plot(
+    x = SMD_match,
+    thresholds = c(m = 0.1),
+    abs = TRUE
+    )
+
+# save names of covariates in vector
+covariates <- names(data)[!names(data) %in% c("abd", "educ")]
+
+# plot balance in unadjusted data using eCDFs
+plots <- list()
+for (var in covariates) {
+  plots[[var]] <- bal.plot(
+    x = SMD_match,
+    var.name = var,
+    which = "both",
+    type = "ecdf"
+  ) +
+  ggtitle(var)
+}
+plots
+```
+
+Because our original dataset contains 462 treated units but only 279 control units, the above matching scheme results in 183 treated units being discarded. Even among the 279 pairs of treated and control units in our matched dataset (n=558), many of the matches are likely to be of poor quality due to the small number of controls. We see this reflected in the love plots and eCDFs, which show that our matching procedure has actually led to more imbalance in many covariates. In this case, matching does not appear to have made our ignorability assumptions more plausable, and may even have made things worse.
+
+When relying on low-dimensional summaries to assess balance, we can potentially miss important information on distributional differences that a simple difference-in-means or other similar test would miss. Empirical CDFs and related statistical tests (e.g., [KS test](https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test)) are a better way of comparing distributions, but typically compare the marginal distributions of covariates separately from one another. Joint distribution plots may be another useful tool for assessing covariate balance that can potentially help to identify differences in the joint distribution of covariates.
+
+## Part D
+
+Here, we conduct nearest neighbor matching for estimating the ATT using the CBPS distance metric, a 5:1 ratio, replacement, and pruning of treatment and control units with no common support.
+
+```{r}
+
+# Match on pre-treatment covariates
+SMD_match_cbps <- matchit(
+    abd ~ age + fthr_ed + mthr_ed + hh_fthr_frm + hh_size96 + orphan96,
+    data = data,
+    method = "nearest",
+    distance = "CBPS",
+    ratio = 5,
+    replace = TRUE,
+# prune treatment and control units with no common support
+    discard = "both"
+)
+summary(SMD_match_cbps)
+love.plot(
+    x = SMD_match_cbps,
+    thresholds = c(m = 0.1),
+    abs = TRUE
+    ) 
+
+# save names of covariates in vector
+covariates <- names(data)[!names(data) %in% c("abd", "educ")]
+
+# plot balance in unadjusted data using eCDFs
+plots <- list()
+for (var in covariates) {
+  plots[[var]] <- bal.plot(
+    x = SMD_match_cbps,
+    var.name = var,
+    which = "both",
+    type = "ecdf"
+  ) +
+  ggtitle(var)
+}
+plots
+```
+
+The above matching procedure resulted in only 2 treated units and 4 control units being discarded, meaning that the size of our matched dataset (which has an effective sample size of 735) is similar to the size of our original dataset (n=741). The love plots and eCDFs also indicate that the matching procedure has substantially improved the amount of covariate balance. Overall, these results suggest that our ignorability assumption should be plausible for the matched dataset, assuming that we have measured all the relevant covariates. We can now estimate the ATT using the code below.
+
+```{r}
+
+# create matched data
+matched_data <- match.data(SMD_match_cbps)
+
+# estimate ATT using marginaleffects
+model_cbps <- lm(
+  educ ~ abd + age + fthr_ed + mthr_ed + hh_fthr_frm + hh_size96 + orphan96,
+  data = matched_data,
+  weights = weights
+)
+
+att_estimate <- marginaleffects::avg_comparisons(model_cbps, variables = "abd")
+att_estimate
+```
+
+The above estimate of the ATT implies that youth who were abducted by the rebel group lost 0.47 years of education on average as a result of their abduction. This effect size is smaller than the one reported in the paper, but this may not be an apples-to-apples comparison since the paper estimates the ATE instead of the ATT and adjusts for other covariates not included in our model.
