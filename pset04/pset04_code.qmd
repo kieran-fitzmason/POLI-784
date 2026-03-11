@@ -1,6 +1,6 @@
 ---
 title: "POLI 784 - Problem Set #3"
-author: "Kieran Fitzmason, Jacob Seigel, Xiangyong Zhang"
+author: "Kieran Fitzmason, Jacob Siegel, Xiangyong Zhang"
 date: today
 format: pdf
 editor: visual
