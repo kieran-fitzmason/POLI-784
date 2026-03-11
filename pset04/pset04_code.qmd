@@ -6,12 +6,215 @@ format: pdf
 editor: visual
 ---
 
+# Question 1
+
+## Part A
+
+Given the following regression: $$
+y_i = \beta_0 + \beta_1 x_i + e_i
+$$ $\beta_0$ represents the intercept of the regression line, which is the expected value of $y_i$ when $x_i$ is equal to zero. $\beta_1$ represents the slope of the regression line, which indicates how $y_i$ changes for a one-unit change in $x_i$. $e_i$ represents the error term, which is the variation in $y_i$ that cannot be explained by the linear relationship with $x_i$. The reasons that $\beta_1$ is not indexed by $i$ is because it represents the consistent effect across all observations, meaning that the effect of $x_i$ on $y_i$ is assumed to be the same for all individuals in the sample. This indicates the structural restrictions of an OLS regression estimate, which assumes that the relationship between the independent variable and the dependent variable is linear and constant across all observations.
+
+## Part B
+
+i)  When $x' = x - 10$, and $x = x' + 10$, the new regression equation becomes:
+
+$$
+y_i  = \beta_0 + \beta_1 (x' + 10) + e_i = \beta_0 + 10\beta_1 + \beta_1 x_i + e_i
+$$ $\beta_0'$ becomes $\beta_0 + 10\beta_1$ and $\beta_1'$ remains the same as $\beta_1$. This is because the intercept is changed by the amount of the shift in $x$, while the slope remains unchanged since it still represents the same change in $y$ for a one-unit change in $x$.
+
+ii) When $x' = 10x$, and $x = \frac{x'}{10}$, the new regression equation becomes:
+
+$$
+y_i  = \beta_0 + \beta_1 \left(\frac{x'}{10}\right) + e_i = \beta_0 + \frac{\beta_1}{10} x' + e_i
+$$ $\beta_0'$ stays as $\beta_0$ and $\beta_1'$ becomes $\frac{\beta_1}{10}$. This is because the slope is changed by the factor of the scaling of $x$, while the intercept remains unchanged since it is not affected by scaling.
+
+iii) When $x' = 10x - 10$, and $x = \frac{x'}{10} + 1$, the new regression equation becomes:
+
+$$
+y_i  = \beta_0 + \beta_1 \left(\frac{x'}{10} + 1\right) + e_i = \beta_0 + \beta_1 + \frac{\beta_1}{10} x' + e_i
+$$ $\beta_0'$ becomes $\beta_0 + \beta_1$ and $\beta_1'$ becomes $\frac{\beta_1}{10}$. This is because the intercept is changed by the amount of the shift in $x$, while the slope is also changed by the factor of the scaling of $x$.
+
+## Part C
+
+i)  When $y'' = y + 10$, and $y = y'' - 10$, the new regression equation becomes:
+
+$$
+y_i'' - 10  = \beta_0 + \beta_1 x_i + e_i \implies y_i'' = \beta_0 + 10 + \beta_1 x_i + e_i
+$$
+
+$\beta_0''$ becomes $\beta_0 + 10$ and $\beta_1''$ remains the same as $\beta_1$. This is because the intercept is changed by the amount of the shift in $y$, while the slope remains unchanged since it still represents the same change in $y$ for a one-unit change in $x$.
+
+ii) When $y'' = 5y$, and $y = \frac{y''}{5}$, the new regression equation becomes:
+
+$$
+\frac{y_i''}{5}  = \beta_0 + \beta_1 x_i + e_i \implies y_i'' = 5\beta_0 + 5\beta_1 x_i + 5e_i
+$$
+
+$\beta_0''$ becomes $5\beta_0$ and $\beta_1''$ becomes $5\beta_1$. This is because both the intercept and the slope are changed by the factor of the scaling of $y$, since they both represent the expected value of $y$ for a given value of $x$.
+
+iii) When $y'' = 5y + 10$, and $y = \frac{y'' - 10}{5}$, the new regression equation becomes:
+
+$$
+\frac{y'' - 10}{5}  = \beta_0 + \beta_1 x_i + e_i \implies y_i'' = 5\beta_0 + 10 + 5\beta_1 x_i + 5e_i
+$$
+
+$\beta_0''$ becomes $5\beta_0 + 10$ and $\beta_1''$ becomes $5\beta_1$. This is because the intercept is changed by both the shift and the scaling of $y$, while the slope is only changed by the factor of the scaling of $y$.
+
+## Part D
+
+When $x_i$ is shifted by a constant $c$, the intercept $\beta_0$ will change but the slope $\beta_1$ will remain the same. When $x_i$ is scaled by a constant $c$, the slope $\beta_1$ will change by a factor of $\frac{1}{c}$, while the intercept $\beta_0$ will remain unchanged. When $y_i$ is shifted by a constant $c$, the intercept $\beta_0$ will change by the same amount, while the slope $\beta_1$ will remain unchanged. When $y_i$ is scaled by a constant $c$, both the intercept $\beta_0$ and the slope $\beta_1$ will change by a factor of $c$. However, all these operations don't affect the substantive conclusions about the relationship between $x_i$ and $y_i$, as they only change the scale or the location of the regression line, but not the underlying linear relationship between the variables.
+
+# Question 2
+
+## Part A
+
+i.  
+
+This means that $\epsilon_i$ represents the true error term, or the structural error, which captures all unobserved factors that affect the dependent variable (Y) but are not included in the model. Conversely, $\hat\epsilon_i$ represents the residuals, which are the differences between the observed values of Y and the predicted values based on the estimated regression line. The residuals are calculated from the sample data and are used to assess the fit of the model, while the error term is a theoretical construct that we cannot directly observe but is crucial for understanding the underlying data-generating process.
+
+ii. $E[\hat{\epsilon}_i | D_i] = 0$ holds as a mathematical property of the fitted regression. In the predictive framework discussed in the intro to regression class slides, the statistical error is defined as the deviation of the outcome from its conditional expectation, $\epsilon = Y - E[Y | X]$, which implies that $E[\epsilon | X] = 0$ by definition of the conditional expectation. Because OLS estimates the best linear predictor of $Y$ given the regressors by minimizing the sum of squared residuals, the fitted residuals inherit this property. The first-order conditions imply that the residuals have mean zero and are orthogonal to the included regressor $D_i$. Therefore $E[\hat{\epsilon}_i | D_i] = 0$ holds as a mathematical consequence of how the regression is defined, rather than as an assumption about the structural data-generating process.
+
+iii. $E[\epsilon_i | D_i] = 0$ holds in the structural model only under the assumption of exogeneity. In the structural or causal framework discussed in the slides, the error term represents unobserved determinants of the outcome, and the condition $E[\epsilon_i | D_i] = 0$ requires that the treatment variable $D_i$ is uncorrelated with these unobserved factors. This assumption would hold, for example, if treatment were assigned as if randomly, so that learning the value of $D_i$ provides no information about the structural error. When the exogeneity condition holds, the OLS estimator recovers the true causal parameter $\tau$ in the structural model, so the estimated coefficient on $D_i$ can be interpreted as the causal effect of the treatment on the outcome. If the condition fails, such as when omitted variables are correlated with $D_i$, the OLS estimate of $\tau$ will generally be biased.
+
+## Part B
+
+We are given that the correct model is: $$
+Y_i = \mu + \tau D_i +\beta U_i+ \epsilon_i
+$$
+
+The sample mean would then be: $$
+\bar{Y} = \mu + \tau\bar{D} + \beta\bar{U} + \bar\epsilon
+$$
+
+Subtracting the sample mean from the model, we get: $$
+Y_i - \bar{Y} = (\mu + \tau D_i +\beta U_i+ \epsilon_i) - (\mu + \tau\bar{D} + \beta\bar{U} + \bar\epsilon)
+$$
+
+Distributing the subtraction, we have: $$
+Y_i - \bar{Y} = \mu + \tau D_i +\beta U_i+ \epsilon_i -\mu - \tau\bar{D} - \beta\bar{U} - \bar\epsilon
+$$ The $\mu$ terms cancel out, leaving us with: $$
+Y_i - \bar{Y} = \tau D_i +\beta U_i+ \epsilon_i - \tau\bar{D} - \beta\bar{U} - \bar\epsilon
+$$
+
+Rearranging the terms, we get: $$
+Y_i - \bar{Y} = \tau D_i - \tau\bar{D } + \beta U_i - \beta\bar{U} + \epsilon_i - \bar\epsilon
+$$
+
+Next, we can factor out $\tau$ and $\beta$ from the respective terms: $$
+Y_i - \bar{Y} = \tau (D_i - \bar{D }) + \beta (U_i - \bar{U}) + (\epsilon_i - \bar\epsilon) 
+$$
+
+## Part C
+
+From the bivariate OLS estimator, we have: $$
+\hat{\tau}
+=
+\frac{\sum_{i=1}^N (Y_i-\bar{Y})(D_i-\bar{D})}
+{\sum_{i=1}^N (D_i-\bar{D})^2}
+$$
+
+From Part B, we showed that: $$
+Y_i - \bar{Y}
+=
+\tau (D_i - \bar{D }) + \beta (U_i - \bar{U}) + (\epsilon_i - \bar\epsilon)
+$$
+
+Substituting this expression into the OLS estimator, we get: $$
+\hat{\tau}
+=
+\frac{
+\sum_{i=1}^N
+\left[
+\tau (D_i - \bar{D }) + \beta (U_i - \bar{U}) + (\epsilon_i - \bar\epsilon)
+\right]
+(D_i-\bar{D})
+}
+{\sum_{i=1}^N (D_i-\bar{D})^2}
+$$
+
+Distributing $(D_i-\bar{D})$ inside the brackets, we have: $$
+\hat{\tau}
+=
+\frac{
+\tau \sum_{i=1}^N (D_i-\bar{D})^2
++
+\beta \sum_{i=1}^N (U_i-\bar{U})(D_i-\bar{D})
++
+\sum_{i=1}^N (\epsilon_i-\bar\epsilon)(D_i-\bar{D})
+}
+{\sum_{i=1}^N (D_i-\bar{D})^2}
+$$
+
+Separating the fraction into three terms, we get: $$
+\hat{\tau}
+=
+\tau
+\frac{\sum_{i=1}^N (D_i-\bar{D})^2}
+{\sum_{i=1}^N (D_i-\bar{D})^2}
++
+\beta
+\frac{\sum_{i=1}^N (U_i-\bar{U})(D_i-\bar{D})}
+{\sum_{i=1}^N (D_i-\bar{D})^2}
++
+\frac{\sum_{i=1}^N (\epsilon_i-\bar\epsilon)(D_i-\bar{D})}
+{\sum_{i=1}^N (D_i-\bar{D})^2}
+$$
+
+Simplifying the first term, we obtain: $$
+\hat{\tau}
+=
+\tau
++
+\beta
+\frac{\sum_{i=1}^N (U_i-\bar{U})(D_i-\bar{D})}
+{\sum_{i=1}^N (D_i-\bar{D})^2}
++
+\frac{\sum_{i=1}^N (\epsilon_i-\bar\epsilon)(D_i-\bar{D})}
+{\sum_{i=1}^N (D_i-\bar{D})^2}
+$$
+
+## Part D
+
+From Part C, we have that: $$
+\hat{\tau}
+=
+\tau
++
+\beta
+\frac{\sum_{i=1}^N (U_i-\bar{U})(D_i-\bar{D})}
+{\sum_{i=1}^N (D_i-\bar{D})^2}
++
+\frac{\sum_{i=1}^N (\epsilon_i-\bar\epsilon)(D_i-\bar{D})}
+{\sum_{i=1}^N (D_i-\bar{D})^2}
+$$
+
+As the sample size becomes large, the last term converges to zero under the assumption that the structural error is uncorrelated with $D_i$. The second term converges to: $$
+\beta \frac{\mathrm{Cov}(D_i,U_i)}{\mathrm{Var}(D_i)}
+$$
+
+Thus, the probability limit of the OLS estimator is: $$
+\hat{\tau}
+\to
+\tau
++
+\beta \frac{\mathrm{Cov}(D_i,U_i)}{\mathrm{Var}(D_i)}
+$$
+
+For omitted variable bias to be 0, the second term must equal zero. Since ${Var}(D_i) > 0$ whenever $D_i$ varies in the sample, omitted variable bias is zero if either: $$
+\beta = 0
+$$ or $$
+\mathrm{Cov}(D_i,U_i) = 0.
+$$
+
+This means that omitted variable bias disappears if the omitted variable $U_i$ has no effect on the outcome $Y_i$, or if $U_i$ is uncorrelated with the regressor $D_i$. If neither of these conditions holds, the OLS estimator will generally be biased because part of the effect of $U_i$ on $Y_i$ is incorrectly attributed to $D_i$.
+
 # Question 3
 
-In this exercise, we analyze data from a study by [Santoro and Broockman (2022)](https://doi.org/10.1126/sciadv.abn5515) examining the effect of conversations between strangers of opposing political parties on measures of polarization. During their conversation, subjects talked about what their perfect day would look like. Subjects assigned to treatment ($D_i=1$) were informed prior to the start of the conversation that their partner was an out-partisan, while those assigned to control ($D_i=0$) were not informed of this. The primary outcome of interest $Y_i$ was self-reported warmth towards outpartisans measured on a feeling thermometer.
+In this exercise, we analyze data from a study by [Santoro and Broockman (2022)](https://doi.org/10.1126/sciadv.abn5515) examining the effect of conversations between strangers of opposing political parties on measures of polarization. During their conversation, subjects discussed what their perfect day would look like. Subjects assigned to treatment ($D_i=1$) were informed prior to the start of the conversation that their partner was an out-partisan, while those assigned to control ($D_i=0$) were not informed of this. The primary outcome of interest $Y_i$ was self-reported warmth towards outpartisans measured on a feeling thermometer.
 
 ```{r}
-#| echo: false
+#| message: false
+#| warning: false
 
 # Load required packages
 library("tidyverse")
@@ -27,7 +230,7 @@ set.seed(42)
 
 ## Part A
 
-Here, we compute an ATE point estimate using the Neyman estimator and corresponding analytical Neyman variance estimate. The formulae for these quantities is as follows:
+Here, we compute an ATE point estimate using the Neyman estimator and corresponding analytical Neyman variance estimate. The formulae for these quantities are:
 
 $$
 \hat{\tau}_{DIM} = \bar{Y}_1 - \bar{Y}_0 = \frac{1}{n_1}\sum_{i:D_i=1}Y_i \space - \frac{1}{n_0} \sum_{i:D_i=0}Y_i
@@ -163,8 +366,8 @@ FWL_model <- lm_robust(FWL_resid_Y ~ FWL_resid_D, data = df,se_type="HC2")
 tau_FWL <- FWL_model$coefficients["FWL_resid_D"]
 
 # Display to console
-glue("Multiple linear regression: tau = {round(tau_MLR,6)}")
-glue("Frisch-Waugh-Lovell procedure: tau = {round(tau_FWL,6)}")
+glue("MLR ATE Estimate: {round(tau_MLR,6)}")
+glue("FWL ATE Estimate: {round(tau_FWL,6)}")
 ```
 
 ## Part C
@@ -210,11 +413,11 @@ One notable difference in these two scatterplots is that the standard error on t
 
 ## Part D
 
-Here, we fit a Lin regression model that captures interactions between the treatment and covariates. The estimated treatment effect and associated 95% confidence interval is subsequently compared against those obtained via multivariate OLS and bivariate OLS.
+Here, we fit a Lin's regression model that captures interactions between the treatment and covariates. The estimated treatment effect and associated 95% confidence interval is subsequently compared against those obtained via multivariate OLS and bivariate OLS.
 
 ```{r}
 
-# Fit a Lin regression model 
+# Fit a Lin's regression model 
 lin_model <- lm_lin(Y ~ D, 
                     covariates = ~age + 
                       gender + 
@@ -268,7 +471,7 @@ Below, we compare the three regression approaches in terms of their efficiency, 
 
 ### Efficiency
 
-**Lin's Regression:** More efficient than bivariate OLS. Similar in efficiency to multivariate OLS in the above example, but in general should be more efficient than multivariate OLS because it can deal with heterogeneous treatment effects.
+**Lin's Regression:** More efficient than bivariate OLS. Similar in efficiency to multivariate OLS in the above example, but in general should be as good or better than multivariate OLS because it can deal with heterogeneous treatment effects.
 
 **Multivariate OLS:** More efficient than bivariate OLS and similar in efficiency to Lin's regression in the above example. However, it could be less efficient than one or both of these methods in other scenarios, such as in the presence of heterogeneous treatment effects or when there are nonlinear relationships between the outcome variable and pre-treatment covariates.
 
@@ -278,7 +481,7 @@ Below, we compare the three regression approaches in terms of their efficiency, 
 
 All three estimators require SUTVA, positivity, and strong ignorability to hold in order to produce unbiased estimates of the ATE. Additional estimator-specific requirements are listed below.
 
-**Lin's Regression:** Assumes a linear relationship between pre-treatment covariates and outcome, but is relatively robust to deviations from this assumption. Can accomodate heterogeneous treatment effects.
+**Lin's Regression:** Assumes a linear relationship between pre-treatment covariates and outcome, but is relatively robust to deviations from this assumption, especially when the sample size is large. Can accomodate heterogeneous treatment effects.
 
 **Multivariate OLS:** Assumes a linear relationship between pre-treatment covariates and outcome. Also assumes a constant treatment effect.
 
@@ -311,7 +514,7 @@ $$
 Our null hypothesis can therefore be formulated as:
 
 $$
-H_0: \beta_1 - \bar{G}\beta_7 = 0 \space\text{and}\space \beta_1 + (1-\bar{G})\beta_7 = 0
+H_0: \beta_1 - \bar{G}\beta_7 = 0 \space\text{ and }\space \beta_1 + (1-\bar{G})\beta_7 = 0
 $$
 
 This hypothesis is evaluated using a Wald test implemented by the `linearHypothesis` function.
@@ -344,7 +547,7 @@ $$
 Y_i = \beta_0 + \beta_1D_i + \dots +\beta_9 \left(D_i \times \left(W_i - \bar{W}\right)\right)
 $$
 
-where $w_i$ is the baseline (pre-treatment) measurement of warmth towards outpartisans and $\bar{w}$ is the average value of this covariate across the sample. The CATE given the value of this covariate is given by:
+where $W_i$ is the baseline (pre-treatment) measurement of warmth towards outpartisans and $\bar{W}$ is the average value of this covariate across the sample. The CATE given the value of this covariate is given by:
 
 $$
 \text{CATE}(W=w) = \beta_1 + \left(w - \bar{W}\right)\beta_9
@@ -405,7 +608,7 @@ model_kernel <- interflex(
 
 # Plot results
 plot(model_kernel,
-     main = "Heterogeneous treatment effects: Kernel regression")
+     main = "HTE: Kernel regression")
 ```
 
 ### Interpretation
