@@ -1,0 +1,237 @@
+---
+title: "POLI 784 - Problem Set #5"
+author: "Kieran Fitzmason, Kat Gruschow, Jacob Siegel"
+date: today
+format: pdf
+editor: visual
+---
+
+# Question 2
+
+Here, we replicate the main findings of a study by [Goyal and Sells (2023)](https://doi.org/10.1017/S0003055423001168) examining how the election of female mayors in Brazil affects party building during their term. The authors use a regression discontinuity design (RDD) to estimate the causal effect of a female candidate winning an election on the gender distribution of recruited party members. Their forcing variable `Margin` is the margin of victory of female mayoral candidates, while their outcome variable `Gender.Gap` is the difference in the recruitment rate of men and women into the female candidate's party per 1000 eligible voters, defined as follows:
+
+$$
+GenderGap = 1000 \space \times \space \left(\frac{MaleRecruits}{MaleVoters} - \frac{FemaleRecruits}{FemaleVoters}\right)
+$$
+
+## Part A
+
+Here, we plot how the outcome variable `Gender.Gap` varies across the forcing variable `Margin`. In this example, "treated" units are municipalities in which the female candidate's party wins the election and "control" units are those in which the male candidate's party wins the election.
+
+```{r}
+
+# Load packages
+library("tidyverse")
+library("glue")
+library("rdrobust")
+library("rddensity")
+
+# Load data
+df <- read.csv('data1-1.csv')
+
+# Create scatterplot of outcome vs. forcing variable
+ggplot(df, aes(x = Margin, y = Gender.Gap)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  geom_vline(xintercept = 0, color="red",linetype="dashed") + 
+  labs(
+    x = "Margin of victory (female candidate)",
+    y = "Gender gap in recruitment rate",
+    title = "Margin of victory and gender gap in party recruitment"
+  ) +
+  theme_minimal()
+```
+
+## Part B
+
+Here, we plot the outcome against the forcing variable with a fourth-order polynomial on either side of the RDD cutoff of zero.
+
+```{r}
+
+# plot cutoff
+rdplot(
+  y = df$Gender.Gap,
+  x = df$Margin,
+  c = 0,
+  p = 4,
+  x.label = "Margin of victory",
+  y.label = "Gender gap in recruitment rate",
+  title = "Margin of victory and gender gap in party recruitment")
+```
+
+In this figure, the red line represents the conditional expectation function (CEF) estimated using a fourth-order polynomial fit, while the blue points represent the local mean outcome within a set of bins that were selected by `rdplot` using a data-driven approach that attempts to mimic the variance of the underlying data. Because each point represents the local mean within each bin, there are far fewer points in this plot than in the one created in Part A.
+
+## Part C
+
+Here, we use `rdrobust` to estimate the local average treatment effect (LATE) of a female candidate winning a close mayoral race on the gender gap in the female candidate's party recruitment rate during the subsequent four years.
+
+```{r}
+
+# fit model
+fit_rd <- rdrobust(
+  y = df$Gender.Gap,
+  x = df$Margin,
+  c = 0,
+  all = TRUE
+)
+
+# print results to console
+summary(fit_rd)
+```
+
+1.  The above results imply that in close elections, victory by female candidates reduces the gender gap in their party's recruitment rate by 0.79 recruits per 1000 eligible voters. This reduction is roughly equal to the average gender gap in our sample, which suggests that female mayors can help to overcome existing disparities in party recruitment.
+2.  In the above model, $h=0.178$ is the bandwidth used to estimate the LATE, while $b=0.393$ is the bandwidth used to estimate the bias of the RDD estimator. The `rdrobust` function uses a linear model with bandwidth $h$ to generate a conventional estimate of the LATE and a quadratic model with bandwidth $b$ to estimate how much bias exists in the conventional estimate. This bias estimate is subsequently used to generate the bias-corrected and robust estimates shown above. By default, both steps utilize a triangular kernel.
+3.  By default, `rdrobust` selects $b$ and $h$ using an approach that seeks to minimize the mean squared error (MSE) of the final estimate. When performing RDD, there is a bias-variance trade off that is influenced by the size of the selected bandwidth: smaller bandwidths have lower bias near the cutoff but higher variance compared to larger bandwidths that include more data from regions further away from the cutoff. Because $MSE \approx Bias^2 + Variance$ , the MSE-optimal bandwidth selected by `rdrobust` attempts to strike a balance between the bias and variance of the estimator.
+
+## Part D
+
+Here, we use the MSE-optimal bandwidth estimated by `rdrobust` to fit a weighted linear regression model of the outcome on either side of the cutoff.
+
+```{r}
+
+# MSE-optimal bandwidth
+# (by default, rdrobust uses same bw on either side of cutoff)
+h <- fit_rd$bws[["h","left"]]
+
+# Cutoff
+c <- 0
+
+# Triangular kernel function
+triangular_kernel <- function(x, h, c = 0.0) {
+  
+  # compute normalized distance from cutoff
+  u <- (x - c) / h
+  
+  # apply triangular kernel: K(u) = (1 - |u|) if |u| <= 1, else 0
+  weights <- ifelse(abs(u) <= 1, 1 - abs(u), 0)
+  
+  return(weights)
+}
+
+# Apply kernel to forcing variable
+df$w <- triangular_kernel(df$Margin,h)
+
+
+# Split data on either side of cutoff
+left_df <- df[df$Margin < c,]
+right_df <- df[df$Margin >= c,]
+
+# Fit weighted linear model on either side of cutoff
+left_fit <- lm(Gender.Gap ~ Margin, data = left_df, weights = w)
+right_fit <- lm(Gender.Gap ~ Margin, data = right_df, weights = w)
+
+# Get intercepts of fitted models 
+left_intercept <- left_fit$coefficients["(Intercept)"]
+right_intercept <- right_fit$coefficients["(Intercept)"]
+
+# Compute LATE as difference in intercepts
+LATE <- right_intercept - left_intercept
+
+# Display to console
+glue("LATE(h={round(h,3)}): {round(LATE,3)}")
+```
+
+This result is consistent with the "conventional" (non-bias-corrected) estimate from Part C.
+
+## Part E
+
+Here, we use the `rddensity` and `rdplotdensity` functions to test the continuity of the forcing variable across the cutoff.
+
+```{r}
+
+forcing_var_density <- rddensity(X = df$Margin, vce = "jackknife")
+p <- rdplotdensity(forcing_var_density, 
+                   X = df$Margin,
+                   xlabel="Margin of victory",
+                   ylabel="Probability density")
+```
+
+Based on the above plot, there is no evidence of sorting or self-selection around the cutoff.
+
+## Part F
+
+Here, we implement several placebo tests to evaluate the robustness of our findings.
+
+```{r}
+
+# Initialize vectors
+coef <- rep(NA,4)
+LB <- rep(NA,4)
+UB <- rep(NA,4)
+label <- rep(NA,4)
+
+
+# Placebo cutoff: c = 0.3
+mod <- rdrobust(
+  y = df$Gender.Gap,
+  x = df$Margin,
+  c = 0.3,
+  all = TRUE
+)
+
+coef[1] <- mod$coef[["Robust","Coeff"]]
+LB[1] <- mod$ci[["Robust","CI Lower"]]
+UB[1] <- mod$ci[["Robust","CI Upper"]]
+label[1] <- "c = 0.3"
+
+# Placebo cutoff: c = -0.3
+mod <- rdrobust(
+  y = df$Gender.Gap,
+  x = df$Margin,
+  c = -0.3,
+  all = TRUE
+)
+
+coef[2] <- mod$coef[["Robust","Coeff"]]
+LB[2] <- mod$ci[["Robust","CI Lower"]]
+UB[2] <- mod$ci[["Robust","CI Upper"]]
+label[2] <- "c = -0.3"
+
+# Placebo outcome: y = Gender.Gap.Lagged
+mod <- rdrobust(
+  y = df$Gender.Gap.Lagged,
+  x = df$Margin,
+  c = 0.0,
+  all = TRUE
+)
+
+coef[3] <- mod$coef[["Robust","Coeff"]]
+LB[3] <- mod$ci[["Robust","CI Lower"]]
+UB[3] <- mod$ci[["Robust","CI Upper"]]
+label[3] <- "y = Gender.Gap.Lagged"
+
+# Placebo outcome: y = UrbanizationRate_2000
+mod <- rdrobust(
+  y = df$UrbanizationRate_2000,
+  x = df$Margin,
+  c = 0.0,
+  all = TRUE
+)
+
+coef[4] <- mod$coef[["Robust","Coeff"]]
+LB[4] <- mod$ci[["Robust","CI Lower"]]
+UB[4] <- mod$ci[["Robust","CI Upper"]]
+label[4] <- "y = UrbanizationRate_2000"
+
+# combine vectors into a dataframe
+plot_df <- data.frame(
+  label = label,
+  coef  = coef,
+  LB    = LB,
+  UB    = UB
+)
+
+# create coefficient plot
+ggplot(plot_df, aes(x = coef, y = label)) +
+  geom_point(size = 3) +
+  geom_errorbarh(aes(xmin = LB, xmax = UB), height = 0.2) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    x     = "Estimated Coefficient (95% CI)",
+    y     = NULL,
+    title = "Placebo Tests"
+  ) +
+  theme_minimal()
+```
+
+The 95% confidence interval of the LATE estimate includes the null under all four placebo tests. This is reassuring since our study design rests on the assumption that the discontinuity in our outcome is specific to the true cutoff of zero. In addition, we would not expect this cutoff to affect pre-treatment covariates such as the urbanization rate as well as lagged outcomes.
