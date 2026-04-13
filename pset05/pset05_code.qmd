@@ -235,3 +235,67 @@ ggplot(plot_df, aes(x = coef, y = label)) +
 ```
 
 The 95% confidence interval of the LATE estimate includes the null under all four placebo tests. This is reassuring since our study design rests on the assumption that the discontinuity in our outcome is specific to the true cutoff of zero. In addition, we would not expect this cutoff to affect pre-treatment covariates such as the urbanization rate as well as lagged outcomes.
+
+## Part G
+
+Here, we evaluate the impact of adding covariates to our model.
+
+```{r}
+
+covariates <- c("University","Married","Incumbent","Age")
+
+mod <- rdrobust(y = df$Gender.Gap,
+                x = df$Margin,
+                c = 0,
+                covs = df[,covariates],
+                all = TRUE)
+
+summary(mod)
+```
+
+In theory, including covariates should improve the efficiency of our estimator. In the above example, the standard errors on our LATE estimates are actually slightly larger when covariates are included; however, the bandwidth $h$ is smaller in the model that includes covariates, which suggests that the estimate obtained using this approach should be less biased.
+
+## Part H
+
+Here, we evaluate the impact of making the following modifications to our base model:
+
+1.  The selected bandwidth size is allowed to vary on either side of the cutoff.
+
+2.  Standard errors are estimated using the HC2 variance estimator.
+
+3.  Instead of local linear regression, local quadratic regression is used to construct the point estimator. By the same token, a third-order polynomial is used to construct the bias correction instead of a second-order polynomial.
+
+```{r}
+
+mod <- rdrobust(y = df$Gender.Gap,
+                x = df$Margin,
+                c = 0,
+                bwselect="msetwo",
+                vce="hc2",
+                all = TRUE)
+
+summary(mod)
+```
+
+Compared to our original model, the bandwidth $h$ used to construct the point estimate is larger on both sides of the cutoff while the bandwidth $b$ used to construct the bias correction is smaller. This results in a $h/b$ ratio that is much larger than before. This implies that the point estimation and bias correction procedures are using essentially the same subset of the data, which is often undesirable. In addition, the confidence intervals on our estimate of the LATE are much larger than before. This suggests that there may not be a sufficient quantity of data to justify adding complexity to our model by incorporating higher-order polynomials and allowing the bandwidth to vary on either side of the cutoff.
+
+## Part I
+
+Here, we test the impact of fitting a fuzzy RD model with a binary treatment indicator that takes on a value of one when the female candidate's margin of victory is greater than or equal to zero.
+
+```{r}
+
+# Create binary assignment indicator
+df$tr <- as.numeric(df$Margin >= 0.0)
+
+# fit fuzzy RD model
+mod <- rdrobust(y = df$Gender.Gap,
+                x = df$Margin,
+                c = 0,
+                fuzzy = df$tr,
+                all = TRUE)
+
+summary(mod)
+```
+
+We see that in this scenario, the fuzzy RD returns the same estimate of the LATE as our original model. This is reassuring since in this example, there are no opportunities for non-compliance (i.e., the candidate with the greater share of the vote is guaranteed to win). This suggests that under full compliance, the fuzzy RD estimator reduces to the sharp RD estimator.
