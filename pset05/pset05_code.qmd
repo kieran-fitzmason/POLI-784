@@ -6,6 +6,40 @@ format: pdf
 editor: visual
 ---
 
+```{r}
+
+# load packages into session
+library("styler")
+library("tidyverse")
+library("glue")
+library("rdrobust")
+library("rddensity")
+library("mvtnorm")
+library("ivDiag")
+```
+
+# Question 1
+
+## Part A
+
+The estimand in a sharp RDD is the average treatment effect at the cutoff. $\tau_{SRD} = E[Y_i(1) - Y_i(0) | Z_i = c]$. This is a local causal effect, as it captures the effect of the treatment on the outcome for units that are at the cutoff $(Z_i = c)$.
+
+The estimand in a Fuzzy RDD is the Local Average Treatment Effect (LATE) at the cutoff, given by: $\tau_{FRD} =\frac{\mu_{Y+} - \mu_{Y-}}{\mu_{D+} - \mu_{D-}}.$ This captures the causal effect for compliers at the cutoff, -- those whose treatment status is changed by crossing the threshold.
+
+## Part B
+
+In a sharp RDD, we account for the influence of confounders through the design rather than by controlling for them directly. The key identification assumptions are no self-selection around the cutoff and continuity at the cutpoint. Put differently, units just above and just below the threshold must be comparable in all relevant respects except for treatment assignment, and nothing else that affects the outcome can jump discontinuously at the cutoff. Under these assumptions, the difference in outcomes at the cutoff can be interpreted as the causal effect of treatment. Covariates are therefore not required for identification, though they can sometimes improve efficiency.
+
+## Part C
+
+What consequence does fitting global polynomials to estimate the causal effect in an RDD have and what alternative estimation strategy is available to us under continuity?
+
+Fitting global polynomials in an RDD is problematic because estimates can be driven by observations far from the cutoff, leading to misleading estimates of the treatment effect. Under the continuity framework, the goal is to approximate the conditional expectation function (CEF) at the cutpoint, but global polynomials impose a single functional form over the entire support of the running variable, which can distort this approximation. Instead, we use local linear regression within a bandwidth around the cutoff to approximate the CEF on each side of the threshold. By focusing on observations close to the cutpoint, this approach provides a more reliable estimate of the causal effect.
+
+## Part D
+
+Relying on cross-validation to select the bandwidth h in an RDD is problematic because it chooses h to minimize prediction error, not to minimize the mean squared error of the treatment effect estimator at the cutoff. As a result, the selected bandwidth can be too large, so bias remains non-negligible relative to the standard error. To address this, we can use MSE-optimal bandwidth selectors (Imbens and Kalyanaraman 2012) and apply bias correction. Calonico, Cattaneo, and Titiunik (2014) propose a bias-corrected estimator that uses an auxiliary bandwidth b to estimate and subtract the leading bias term, while adjusting inference accordingly. In practice, we can use rdrobust, which selects both bandwidths automatically.
+
 # Question 2
 
 Here, we replicate the main findings of a study by [Goyal and Sells (2023)](https://doi.org/10.1017/S0003055423001168) examining how the election of female mayors in Brazil affects party building during their term. The authors use a regression discontinuity design (RDD) to estimate the causal effect of a female candidate winning an election on the gender distribution of recruited party members. Their forcing variable `Margin` is the margin of victory of female mayoral candidates, while their outcome variable `Gender.Gap` is the difference in the recruitment rate of men and women into the female candidate's party per 1000 eligible voters, defined as follows:
@@ -19,12 +53,6 @@ $$
 Here, we plot how the outcome variable `Gender.Gap` varies across the forcing variable `Margin`. In this example, "treated" units are municipalities in which the female candidate's party wins the election and "control" units are those in which the male candidate's party wins the election.
 
 ```{r}
-
-# Load packages
-library("tidyverse")
-library("glue")
-library("rdrobust")
-library("rddensity")
 
 # Load data
 df <- read.csv('data1-1.csv')
@@ -299,3 +327,219 @@ summary(mod)
 ```
 
 We see that in this scenario, the fuzzy RD returns the same estimate of the LATE as our original model. This is reassuring since in this example, there are no opportunities for non-compliance (i.e., the candidate with the greater share of the vote is guaranteed to win). This suggests that under full compliance, the fuzzy RD estimator reduces to the sharp RD estimator.
+
+# Question 3
+
+## Part A
+
+```{r}
+
+#load data into session 
+data <- read_csv("data2-1.csv")
+
+#i. 
+#Compute the proportion of always-takers, never-takers, and compliers in the sample. #
+# Make sure that these proportions sum to 1 and print the results to console.
+
+#compute the proportion of always-takers
+always_takers <- mean(data$D[data$Z == 0]==1)
+
+#compute the proportion of never-takers
+never_takers <- mean(data$D[data$Z == 1]==0)
+
+#compute the proportion of compliers
+compliers <- 1 - always_takers - never_takers
+
+#make sure proportions sum to 1 and print to console 
+sum <- always_takers + never_takers + compliers
+
+#show sum in console
+print(paste("Sum of proportions:", sum))
+```
+
+ii. 
+
+We are not computing the proportion of defiers because we are assuming monotonicity, which rules out the existence of defiers. Monotonicity means that there are no units who would take the treatment when assigned to control and refuse it when assigned to treatment. Therefore, under this assumption, the proportion of defiers is zero by definition, and we focus on classifying units as always-takers, never-takers, or compliers.
+
+## Part B
+
+```{r}
+#Estimate the ITT, the LATE using the Wald estimator, and the LATE using the
+#2SLS estimator (without covariates) and print the results to console.
+
+#estimate the ITT
+estimated_ITT <- mean(data$Y[data$Z == 1]) - mean(data$Y[data$Z == 0])
+
+#estimate the LATE using the Wald estimator
+LATE_wald <- (
+  mean(data$Y[data$Z == 1]) - mean(data$Y[data$Z == 0])
+) / (
+  mean(data$D[data$Z == 1]) - mean(data$D[data$Z == 0])
+)
+
+#estimate the LATE using the 2SLS estimator (without covariates)
+# create dataframe for model fitting
+df <- cbind.data.frame(Y = data$Y, D = data$D, Z = data$Z)
+
+# fit iv model
+ivreg_diag <- ivDiag(
+  Y = "Y",
+  D = "D",
+  Z = "Z",
+  data = df,
+  parallel = FALSE
+)
+
+# print estimates from model to console
+names(ivreg_diag) 
+ivreg_diag$est_2sls
+```
+
+## Part C
+
+```{r}
+
+#Evaluate the strength of the instrumental variable using the first-stage F-test and
+#the Anderson-Rubin test. Print the results to console and interpret your findings.
+
+# 1st-stage F-statistics
+ivreg_diag$F_stat
+
+# Anderson-Rubin weak instruments test
+ivreg_diag$AR
+```
+
+The F-statistic value of over 4000 indicates that we have a very strong instrument, as any F-statistic value higher than 10 is conventionally considered sufficient to satisfy the relevance restriction. The Anderson–Rubin test produces a confidence interval that excludes zero, further confirming that the estimated treatment effect is statistically significant and that the instrument is not weak.
+
+# Question 4
+
+```{r}
+
+# Load data
+data3 <- read.csv("data3-1.csv")
+```
+
+## Part A
+
+ii\. *Let's impose the following assumption of monotonicity* If $D_i(1) \neq D_i(0)$, then $D_i(1) = D_i(2)$. *Explain what this assumption states.*
+
+Monotonicity is the assumption of "no defiers"--that if someone is randomly assigned treatment, they either comply because of treatment effect or because they are an always-taker and would have anyways. Treatment cannot induce people to "defy" and refuse treatment. This statement of monotonicity in our example means that if assigned to treatment for the community school, students either comply and attend community school, attend community school because they are an "always community school" unit and would have anyways, or remain in the school level they would have under control. No student can "downgrade" their school level with treatment — if they would have attended community school under control, they cannot move down to public school or staying home under treatment.
+
+ii\. Present the *remaining* principal strata in a table.
+
+| Treatment status | Zi = 0 | Zi = 1 | Label               |
+|------------------|--------|--------|---------------------|
+|                  | 0      | 0      | Never taker         |
+|                  | 0      | 2      | Home-to-community   |
+|                  | 1      | 1      | Always public       |
+|                  | 1      | 2      | Public-to-community |
+|                  | 2      | 2      | Always community    |
+
+## Part B
+
+i\. Complete the table with the principal strata that comprise the respective groups formed by crossing $D_i$ and $Z_i$
+
+| Treatment Status | Zi = 0      | Zi = 1            |
+|------------------|-------------|-------------------|
+| Di = 0           | (0,0)       | (0,0)             |
+| Di = 1           | (1,1) (1,2) | (1,1)             |
+| Di = 2           | (2,2)       | (2,2) (0,2) (1,2) |
+
+ii\.
+
+```{r}
+prop.table(table(data3$D, data3$Z), margin = 2)
+```
+
+## Part C
+
+ii\. Calculate the proportion of each principal stratum. Make sure that these proportions sum to 1 and print the results to console.
+
+First, the never-takers are the *only* stratum in Di=0\|Zi=1, so we can find them easily.
+
+```{r}
+p_D0_Z1 <- prop.table(table(data3$D, data3$Z), margin = 2)["0", "1"]
+# pulling from the table already made
+p00 <- p_D0_Z1
+p00
+```
+
+Second, the always-public schoolers are the only stratum in Di=1\|Zi=1, so we can find them easily.
+
+```{r}
+p_D1_Z1 <- prop.table(table(data3$D, data3$Z), margin = 2)["1", "1"]
+p11 <- p_D1_Z1
+p11
+```
+
+Third, the always-community-school people are the only stratum found in Di=2\|Zi=0, so we can find their proportion easily.
+
+```{r}
+p_D2_Z0 <- prop.table(table(data3$D, data3$Z), margin=2)["2", "0"]
+p22 <- p_D2_Z0
+p22
+```
+
+With random assignment to treatment, we can take the proportion of the sample that is always-community-schoolers in Di=2\|Zi=0 is equivalent to the proportion in Di=2\|Zi=1, which gets us closer to identifying both of our complier proportions.
+
+There are two types of compliers, those who would have stayed at home but, under treatment, attend community school (home-to-community) and those who would have been in public school but, under treatment, enter community schools (public-to-community).
+
+To get to them, I am going to need the remaining cells:
+
+```{r}
+p_D1_Z0 <- prop.table(table(data3$D, data3$Z), margin=2)["1","0"]
+p_D2_Z1 <- prop.table(table(data3$D, data3$Z), margin=2)["2","1"]
+```
+
+For (0,2), our would have stayed at home but then attend community school if treated group, we see that they only exist in cell Di=2\|Zi=1 but in a mix with (2,2) and (1,2). We have the proportion for (2,2), but need to find (1,2) to be able to isolate (0,2).
+
+Group (1,2)--would stay in public school under control but move to community school when treated—appears in both Di=1\|Zi=0 and Di=2\|Zi=1, but they are only with (1,1) in the former cell. So, we use $$p_{1,2} = p_{D=1|Z=0} - p_{1,1}$$
+
+```{r}
+p12 <- p_D1_Z0 - p11
+p12
+```
+
+Now we can look at stratum (0,2): $$p_{0,2} = p_{D=2|Z=1} - p_{1,2} - p_{2,2}$$
+
+```{r}
+p02 <- p_D2_Z1 - p22 - p12
+p02
+```
+
+We have now found the proportion of each principal stratum. Now we check that they add to 1:
+
+```{r}
+p00 + p11 + p22 + p12 + p02
+```
+
+## Part D
+
+*Under the assumption of monotonicity, the local average treatment effect (LATE) represents the effect on respondents whose choices are affected by the instrument. Calculate the total proportion of such respondents based on your answer in 4c. Estimate the LATE as the ratio between the ITT estimate and this proportion.*
+
+The respondents whose choices are affected by the instrument are those stratum that change their behavior with treatment, so that eliminates the never-takers (0,0) the always public schoolers (1,1), and the always community schoolers (2,2).
+
+```{r}
+pi_c <- p12 + p02
+pi_c
+```
+
+The ITT is the average outcome among the treated minus the average outcome among control, regardless of compliance: $$ITT = E[Y|Z=1] - E[Y|Z=0]$$
+
+So, we calculate that by
+
+```{r}
+Y1 <- mean(data3$Y[data3$Z == 1])
+Y0 <- mean(data3$Y[data3$Z ==0])
+
+ITT <- Y1 - Y0
+ITT
+```
+
+To estimate the LATE, we compute the ratio between the ITT estimate and the compliance rate:
+
+```{r}
+LATE <- ITT / pi_c
+LATE
+```
+
