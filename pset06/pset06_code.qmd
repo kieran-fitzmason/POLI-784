@@ -52,19 +52,275 @@ Here, we estimate the effect of switching to an appointed assessor using a class
 # and those that never switched (controls)
 dat_DID <- data[data$cohort %in% c(1,14),]
 
+# Get outcome variable
+Y <- dat_DID$reassessed
+
 # Create a treated/control indicator
-dat_DID$treated <- as.numeric(dat_DID$cohort == 14)
+treated <- (dat_DID$cohort == 14)
+control <- !treated
 
 # Create a pre/post treatment indicator
-dat_DID$post_treatment <- as.numeric(dat_DID$year >= 1999)
+post_treatment <- (dat_DID$year >= 1999)
+pre_treatment <- !post_treatment
 
-# Fit classic 2x2 DiD regression
-mod_1B <- lm(reassessed ~ treated * post_treatment, data = dat_DID)
-summary(mod_1B)
+# Calculate ATT using classic 2x2 DiD estimator
+Ybar_treated_pre <- mean(Y[treated&pre_treatment])
+Ybar_treated_post <- mean(Y[treated&post_treatment])
+Ybar_control_pre <- mean(Y[control&pre_treatment])
+Ybar_control_post <- mean(Y[control&post_treatment])
+ATT_1B <- (Ybar_treated_post - Ybar_treated_pre) - (Ybar_control_post - Ybar_control_pre)
 
-# Extract ATT estimate
-ATT_1B <- mod_1B$coefficients["treated:post_treatment"]
-
-# Print to console
-glue("Classic 2x2 DiD ATT estimate: {round(ATT_1B,6)}")
+glue("ATT estimate produced using classic 2x2 DiD estimator: {round(ATT_1B,6)}")
 ```
+
+## Part C
+
+Here, we estimate the ATT using OLS regression of two-way transformed variables
+
+```{r}
+
+# Create function to apply two-way transformation
+two_way_transformation <- function(df,outcome_col,unit_col,period_col){
+  
+  # Get relevant columns
+  df <- df[,c(outcome_col,unit_col,period_col)]
+  colnames(df) <- c("Y","i","t")
+  
+  # Calculate unit- and period-specific means
+  unit_means <- df %>% group_by(i) %>% summarise(unit_mean = mean(Y))
+  period_means <- df %>% group_by(t) %>% summarise(period_mean = mean(Y))
+  
+  # Attach to dataframe
+  df <- left_join(df,unit_means,by="i")
+  df <- left_join(df,period_means,by="t")
+  
+  # Calculate grand mean
+  grand_mean <- mean(df$Y)
+  
+  # Apply two-way transformation
+  Y_tw <- df$Y - df$unit_mean - df$period_mean + grand_mean
+  
+  # Return result
+  return(Y_tw)
+}
+
+# Apply transformation to outcome and treatment columns
+dat_DID$reassessed_tw <- two_way_transformation(dat_DID,"reassessed","swis_code","year")
+dat_DID$appointed_tw <- two_way_transformation(dat_DID,"appointed","swis_code","year")
+
+# Estimate ATT via OLS
+# (Because we applied two-way transformation, this should be equivalent to TWFE model)
+mod_1C <- lm(reassessed_tw ~ appointed_tw, data = dat_DID)
+ATT_1C <- mod_1C$coefficients["appointed_tw"]
+summary(mod_1C)
+
+glue("ATT estimate produced using OLS regression and two-way transformation: {round(ATT_1B,6)}")
+```
+
+The point estimates of the ATT produced in Part C are equivalent to those produced in Part B. This is reassuring since the regression in Part C is equivalent to fitting a two-way fixed effects (TWFE) model, which is equivalent to DiD in settings where all treated units receive treatment at the same time. Because we specifically filtered our data to include only towns that never switch (controls) and those that switch in 1999 (treated), this criteria is satisfied and we do not need to worry about "forbidden comparisons" or "negative weights".
+
+## Part D
+
+Here, we use the `feols` package to fit a two-way fixed effects (TWFE) model. In the first model (shown below) we assume that errors are independently and identically distributed (i.i.d.) when computing standard errors, which is a common assumption in OLS regression.
+
+```{r}
+
+## Model (1): i.i.d. errors (common assumption for OLS)
+mod_1D_iid <- feols(
+  fml = reassessed ~ appointed | swis_code + year,
+  data = dat_DID,
+  vcov = "iid"
+)
+
+# Extract ATT estimate and SE
+ATT_1D_iid <- mod_1D_iid$coefficients["appointed"]
+SE_1D_iid <- mod_1D_iid$se["appointed"]
+
+# print results to console
+summary(mod_1D_iid)
+glue("ATT estimate produced using feols with iid errors: {round(ATT_1D_iid,6)}")
+glue("Standard error: {round(SE_1D_iid,6)}")
+```
+
+As expected, our point estimates of the ATT are equivalent to those produced in Parts B and C. However, because the error terms of individual units are likely to be autocorrelated (e.g., towns that conduct a reassessment in year $t$ are unlikely to conduct another reassessment in year $t+1$) the assumption of i.i.d. errors is likely violated. To overcome this issue, we can instead compute standard errors that are clustered at the unit-level.
+
+```{r}
+
+## Model (2): clustered errors (more realistic for panel data)
+mod_1D_clust <- feols(
+  fml = reassessed ~ appointed | swis_code + year,
+  data = dat_DID,
+  vcov = cluster ~ swis_code
+)
+
+# Extract ATT estimate and SE
+ATT_1D_clust <- mod_1D_clust$coefficients["appointed"]
+SE_1D_clust <- mod_1D_clust$se["appointed"]
+
+# print results to console
+summary(mod_1D_clust)
+glue("ATT estimate produced using feols with iid errors: {round(ATT_1D_clust,6)}")
+glue("Standard error: {round(SE_1D_clust,6)}")
+```
+
+The above results suggest that standard OLS regression (which assumes i.i.d. errors) has a tendency to underestimate standard errors when autocorrelation is present. As such, the recommended practice is to cluster errors at the unit level when working with panel data.
+
+## Part E
+
+Here, we fit a leads-and-lags model to check for violations of the parallel trends assumption.
+
+```{r}
+
+# Create binary variable indicating units that receive treatment
+dat_DID$treated <- as.numeric(dat_DID$cohort==14)
+
+# fit leads-and-lags model
+mod_1E <- feols(
+  fml = reassessed ~ i(year, treated, 1998) | swis_code + year,
+  data = dat_DID,
+  vcov = cluster ~ swis_code
+)
+
+# plot results
+iplot(mod_1E)
+```
+
+As shown in the above plot, there does not appear to be a statistically-significant divergence in the coefficients of treated and control units during the pre-treatment period from 1987-1998. This suggests that the parallel trends assumption is not unreasonable in this scenario.
+
+## Part F
+
+Here, we use `feols` to apply the TWFE estimator to our original dataset. This dataset contains a much larger sample of towns which can receive treatment at different points in time.
+
+```{r}
+
+# Fit TWFE model
+
+mod_1F <- feols(
+  fml = reassessed ~ appointed | swis_code + year,
+  data = data,
+  vcov = cluster ~ swis_code
+)
+
+# Extract ATT estimate and SE
+ATT_1F <- mod_1F$coefficients["appointed"]
+SE_1F <- mod_1F$se["appointed"]
+
+# print results to console
+summary(mod_1F)
+glue("ATT estimate produced TWFE model and original dataset: {round(ATT_1F,6)}")
+glue("Standard error: {round(SE_1F,6)}")
+```
+
+This approach is likely to result in biased estimates of the ATT because the TWFE estimator cannot accommodate staggered adoption of treatment; this occurs due to "forbidden comparisons" or "negative weights" that implicitly use already-treated units as controls for newly-treated units.
+
+## Part G
+
+Here, we use `feols` to fit the following outcome model using only untreated observations:
+
+$$
+Y_{it}(0) = \alpha_i + \gamma_t + \epsilon_{it} \space \forall (i,t) \notin \mathcal{M}
+$$
+
+Where $\mathcal{M}$ is the set of treated observations. The fitted model is then used to impute the counterfactual outcome and individualistic treatment effect for treated observations:
+
+$$
+\hat{\tau}_{it} = Y_{it} - \hat{Y}_{it}(0)
+$$
+
+The ATT is subsequently estimated by taking an average of the individualistic treatment effects for treated observations:
+
+$$
+\hat{ATT} = \frac{1}{|\mathcal{M}|}\sum_{(i,t) \in \mathcal{M}} \hat{\tau}_{it}
+$$
+
+```{r}
+
+# Split data into set of treated / untreated observations
+untreated_obs <- data[data$appointed == 0,]
+treated_obs <- data[data$appointed == 1,]
+
+# Fit TWFE model for untreated potential outcome
+mod_1G <- feols(
+  fml = reassessed ~ 1 | swis_code + year,
+  data = untreated_obs,
+  vcov = cluster ~ swis_code
+)
+
+# Use fitted model to impute counterfactual outcome for treated observations
+treated_obs$reassessed_ct <- predict(mod_1G, newdata = treated_obs)
+
+# Compute individualistic treatment effect (ITE)
+treated_obs$ITE <- treated_obs$reassessed - treated_obs$reassessed_ct
+
+# Compute ATT as average of ITEs
+ATT_1G <- mean(treated_obs$ITE,na.rm=TRUE)
+
+glue("ATT estimate produced via manual implementation of FEct estimator: {round(ATT_1G,6)}")
+```
+
+## Part H
+
+Here, we use the `fect` package to estimate the following quantities:
+
+1.  The "average" ATT over the entire study period
+2.  The "dynamic" ATT stratified by the number of years since treatment adoption
+
+```{r}
+
+# set seed for reproducibility
+set.seed(42) # fect uses bootstrapping for for variance estimation
+
+# fit fixed-effects counterfactual estimator model
+mod_1H <- fect(
+  formula = reassessed ~ appointed,
+  data = data,
+  index = c("swis_code", "year"),
+  method = "fe",
+  force = "two-way",
+  se = TRUE,
+  nboots = 1000 
+)
+
+# print results to console
+mod_1H
+
+# plot fect results
+plot(mod_1H)
+```
+
+The above plot of dynamic treatment effects (which appear to be non-significant during pre-treatment periods) suggests that the estimator's assumption of no pre-trends might be reasonable. However, we can test this assumption in a more robust manner using placebo testing.
+
+## Part I
+
+Here, we conduct a placebo test with three placebo periods to check for the presence of pre-trends.
+
+```{r}
+
+
+# Conduct placebo test
+mod_1I <- fect(
+  formula = reassessed ~ appointed,
+  data = data,
+  index = c("swis_code", "year"),
+  method = "fe",
+  force = "two-way",
+  se = TRUE,
+  nboots = 1000,
+  placeboTest = TRUE,
+  placebo.period = c(-2, 0),
+)
+
+# print results to console
+mod_1I
+
+# plot fect results
+plot(mod_1I)
+```
+
+The built-in placebo test procedures of `fect` return two main diagnostic measures:
+
+1.  The placebo test p-value. This p-value represents the probability of observing our effect size under the null hypothesis of $ATT = 0$ during pre-treatment placebo periods (i.e., no pre-trends). If this p-value is significant, then it indicates that the assumption of no pre-trends is violated.
+
+2.  The placebo equivalence test p-value or "two one-sided tests" (TOST) p-value. This p-value represents the probability of observing near-zero effects during all pre-treatment placebo periods under the null hypothesis that the $ATT < -\theta_2$ or $ATT > \theta_1$ where $\left[-\theta_2,\theta_1\right]$ represents the range of values that the researcher deems to be sufficiently close to zero (i.e., the equivalence range). By default, `fect` sets this range as $\left[-0.36\hat{\sigma}_\epsilon, 0.36\hat{\sigma}_\epsilon\right]$, where $\hat{\sigma}_\epsilon$ is the estimated standard deviation of the residualized untreated outcome, but users can modify this parameter using the `tost.threshold` argument. If this p-value is significant, then it indicates that any pre-trends that might be present are small enough that they fall within the researcher's tolerance.
+
+Our placebo test procedure found that p-value #1 was insignificant and p-value #2 was significant, both of which support the assumption of no pre-trends.
