@@ -1,0 +1,70 @@
+---
+title: "POLI 784 - Problem Set #6"
+author: "Emily Arnsberg, Kieran Fitzmason, Otilda Harris"
+date: today
+format: pdf
+editor: visual
+---
+
+```{r}
+# Load packages
+library("tidyverse")
+library("plm")
+library("sandwich")
+library("panelView")
+library("fixest")
+library("fect")
+library("sensemakr")
+library("glue")
+```
+
+# Question 1
+
+In this question, we analyze data from a study by [Sances (2016)](https://joeornstein.github.io/pols-4641/readings/Sances%20-%202016%20-%20The%20Distributional%20Impact%20of%20Greater%20Responsiveness%20Evidence%20from%20New%20York%20Towns.pdf), which evaluated the effect of a town switching from an elected to an appointed tax assessor on the frequency of property tax reassessments in New York state during the 1980s through early 2000s.
+
+## Part A
+
+```{r}
+# Load data
+data <- read.csv("data1-2.csv")
+
+# Print number of unique units
+num_units <- length(unique(data$swis_code))
+glue("Number of units: {num_units}")
+
+# Print number of unique periods
+num_periods <- length(unique(data$year))
+glue("Number of periods: {num_periods}")
+
+# Visualize treatment status using panelview
+panelview(data=data,
+          formula=reassessed~appointed,
+          index=c("swis_code","year"))
+```
+
+## Part B
+
+Here, we estimate the effect of switching to an appointed assessor using a classic 2x2 DiD design that compares towns that switched in 1999 to those that never switched.
+
+```{r}
+
+# Filter data to include only towns that switched in 1999 (treated)
+# and those that never switched (controls)
+dat_DID <- data[data$cohort %in% c(1,14),]
+
+# Create a treated/control indicator
+dat_DID$treated <- as.numeric(dat_DID$cohort == 14)
+
+# Create a pre/post treatment indicator
+dat_DID$post_treatment <- as.numeric(dat_DID$year >= 1999)
+
+# Fit classic 2x2 DiD regression
+mod_1B <- lm(reassessed ~ treated * post_treatment, data = dat_DID)
+summary(mod_1B)
+
+# Extract ATT estimate
+ATT_1B <- mod_1B$coefficients["treated:post_treatment"]
+
+# Print to console
+glue("Classic 2x2 DiD ATT estimate: {round(ATT_1B,6)}")
+```
