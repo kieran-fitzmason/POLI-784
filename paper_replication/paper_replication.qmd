@@ -1,0 +1,60 @@
+---
+title: "POLI 784 - Replication of Gourevitch et al. (2025)"
+author: "Kieran Fitzmason"
+date: today
+format: html
+editor: visual
+---
+
+# Background
+
+Flooding is one of the most frequent and costly natural hazards in the United States, causing billions of dollars in property damage each year. Unlike other perils such as wind and fire, flood damage is generally not covered by standard homeowners insurance and must be purchased as a separate standalone policy. The primary provider of flood insurance in the U.S. is the government-run National Flood Insurance Program (NFIP), which was founded in 1968 to address the lack of private market coverage. As of 2024, the NFIP provided coverage to 4.8 million policyholders nationwide while collecting \$4.0 billion in annual premiums.
+
+The NFIP has historically offered flood insurance at below-market rates in order to further its goal of increasing the affordability and uptake of flood insurance. However, the increasing frequency and severity of flood events in recent decades have caused the program to accumulate debt at a rapid pace: as of 2026, the program was \$22.5 billion in debt to the U.S. Treasury despite having received \$16.0 billion in debt forgiveness in 2017. Concerns over program solvency have prompted the NFIP to implement a new rate-setting methodology known as Risk Rating 2.0 that aims to more closely align flood insurance premiums with a property’s actual risk. These “full-risk” premiums were implemented for all new policies originated after October 2021 and began to be gradually phased in for existing policyholders starting in April 2022. This has resulted in a net increase in flood insurance premiums across the U.S., but in a manner that is highly variable by geography. The rising cost of flood insurance has led to concerns that some homeowners may be discontinuing their policy altogether in response to these price increases, leaving them financially vulnerable in the event of a flood.
+
+In a recent study, [Gourevitch, Snyder, and Kousky (2025)](https://doi.org/10.63024/32za-vmy3) exploit geographic variation in premium increases under Risk Rating 2.0 to evaluate the effect of these pricing reforms on flood insurance uptake. Their outcome of interest is the number of policies-in-force within each zip code from the date of implementation through October 2024. Their “treatment” is the percent change between the median premium in September 2022 and the median full-risk premium under Risk Rating 2.0 in each zip code. This treatment is discretized to create four groups of equal size, with the group experiencing the lowest increase in premiums used as controls. The authors utilize panel data models with dynamic treatment effects to estimate the impact of premium increases on flood insurance uptake (Fig. 2). They also conduct subgroup analyses to explore heterogeneity in treatment effects based on median household income and flood zone status (Fig. 3).
+
+![**Figure 2 of Gourevitch et al. (2025)**: Estimated effects of Risk Rating 2.0 on NFIP policies-in-force by month relative to date of implementation: A) Estimated coefficients for new policies; B) Estimated coefficients for existing policies. Error bars indicate 95% confidence intervals.](https://journalofcrr.com/wp-content/uploads/2025/11/Gourevitch-Figure-2-scaled.png)
+
+![**Figure 3 of Gourevitch et al. (2025):** averaged effects of Risk Rating 2.0 on NFIP policies-in-force in May 2024 through October 2024: A) Estimated coefficients for new policies by flood zone; B) Estimated coefficients for existing policies by flood zone; C) Estimated coefficients for new policies by median household income; D) Estimated coefficients for existing policies by median household income. Error bars indicate 95% confidence intervals.](https://journalofcrr.com/wp-content/uploads/2025/11/Gourevitch-Figure-3-scaled.png)
+
+In this document, we attempt to reproduce the results of this paper using common panel data analysis methods while exploring the robustness of their findings to alternative models and assumptions.
+
+# Data Processing
+
+Although the authors did not publish a replication package, the data used in this study are publicly available from the following sources:
+
+-   NFIP policy enrollment data: <https://www.fema.gov/openfema-data-page/fima-nfip-redacted-policies-v2>
+
+-   Median legacy vs. full-risk premiums by zip code: <https://www.fema.gov/flood-insurance/work-with-nfip/risk-rating/single-family-home>
+
+-   Median household income by ZCTA: <https://data.census.gov/table?q=DP03&g=010XX00US$8600000&y=2022>
+
+These datasets were cleaned and merged using python code adapted from an ongoing research project available at: <https://github.com/kieran-fitzmason/POLI-784/tree/main/paper_replication>.
+
+Our final sample consists of 55 months of NFIP enrollment data from 15,912 unique zip codes observed between October 2020 and April 2025. When estimating the effects of Risk Rating 2.0 on the number of new policies, we focus on observations from the 12 months preceding and 36 months following October 2021; when estimating effects on the number of existing policies, we focus on observations from the 12 months preceding and 36 months following April 2022.
+
+Following the procedure of the authors, premium increases were discretized into four treatment levels containing an approximately equal number of units: 0-8% (control), 8-32% (level 1), 34-94% (level 2), and \>94% (level 3). Counts of policies-in-force (PIF) were log-transformed prior to analysis to ensure normality. This transformation is important to keep in mind when interpreting regression coefficients: when fitting a linear model of the form $\log(Y) = \beta_0 + \beta_1 X$, a one-unit increase in $X$ is associated with a $(e^{\beta_1} - 1) \times 100\%$ percentage change in $Y$.
+
+```{r}
+
+# Load packages
+library(tidyverse)
+library(glue)
+library(fixest)
+library(fect)
+
+# Load data
+data <- readRDS("NFIP_RR2_panel_data.rds")
+
+# Print summary to console
+summary(data)
+```
+
+# Main Analysis
+
+# Subgroup Analysis
+
+# Robustness Checks
+
+# Conclusions
