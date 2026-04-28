@@ -104,7 +104,7 @@ policies['existSfhaPIF'] = (1-policies['newPolicyIndicator'])*policies['sfhaIndi
 policies['existNonSfhaPIF'] = (1-policies['newPolicyIndicator'])*(1-policies['sfhaIndicator'])
 
 # Create groupby object that we can use to stratify our policy counts
-strat_cols = ['propertyState','countyCode','zipCode']
+strat_cols = ['propertyState','zipCode']
 G = policies.groupby(strat_cols)
 
 ## Calculate number of policies-in-force within each strata
@@ -156,12 +156,20 @@ combined_df = combined_df[combined_df['date'] == combined_df['period_end']].drop
 mask = (combined_df['date'] >= pd.Timestamp('2010-01-01'))&(combined_df['date'] < pd.Timestamp('2025-10-01'))
 combined_df = combined_df[mask].reset_index(drop=True)
 
+### *** MANUALLY CREATE CROSSWALK BETWEEN ZIP CODES AND COUNTY CODES *** ###
+
+# For each zip code, select most commonly occurring county code among associated NFIP policies
+crosswalk = policies[['zipCode','countyCode']].groupby('zipCode').agg({'countyCode':lambda x: x.mode()[0]}).reset_index()
+
+# Join to policy-in-force counts
+combined_df = pd.merge(combined_df,crosswalk,on='zipCode',how='left')
+
 ### *** SAVE RESULTS *** ###
 
-combined_df.rename(columns={'propertyState':'state'},inplace=True)
+combined_df.rename(columns={'propertyState':'state','countyCode':'assignedCountyCode'},inplace=True)
 
 data_types = {'state':'string[pyarrow]',
-              'countyCode':'string[pyarrow]',
+              'assignedCountyCode':'string[pyarrow]',
               'zipCode':'string[pyarrow]',
               'date':'date32[day][pyarrow]',
               'newPIF':'int64[pyarrow]',
@@ -171,7 +179,7 @@ data_types = {'state':'string[pyarrow]',
               'existSfhaPIF':'int64[pyarrow]',
               'existNonSfhaPIF':'int64[pyarrow]'}
 
-combined_df = combined_df.astype(data_types)
+combined_df = combined_df[data_types.keys()].astype(data_types)
 
 outname = os.path.join(outfolder,f'{state}_policies_in_force.parquet')
 combined_df.to_parquet(outname)

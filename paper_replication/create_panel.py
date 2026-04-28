@@ -76,16 +76,12 @@ policies['relativeIncreasePremium'] = policies['medianFullRiskPremium']/policies
 # Discretize treatment level using same bins as Gourevitch et al. (2025)
 treatment_bins = [0.08,0.34,0.94,np.inf]
 policies['treatmentLevel'] = np.digitize(policies['relativeIncreasePremium'],treatment_bins)
-for level in np.sort(policies['treatmentLevel'].unique()):
-    policies[f'treatmentLevel{level}'] = (policies['treatmentLevel']==level).astype(int)
 
 ### *** LINK POLICIES IN FORCE WITH INCOME DATA *** ###
 
 # Discretize income based on 25th, 50th, and 75th percentile of ZCTA median income
 income_bins = income['medianHouseholdIncome'].quantile([0.25,0.5,0.75]).tolist() + [np.inf]
 income['incomeLevel'] = np.digitize(income['medianHouseholdIncome'],income_bins)
-for level in np.sort(income['incomeLevel'].unique()):
-    income[f'incomeLevel{level}'] = (income['incomeLevel']==level).astype(int)
 
 # Attach data to policies
 policies = pd.merge(policies,income,on='zipCode',how='left')
@@ -112,7 +108,7 @@ policies = policies[policies['monthsRelativeToApr2022'] <= 36]
 
 # Set data types for more efficient storage
 data_types = {'state':'string[pyarrow]',
-              'countyCode':'string[pyarrow]',
+              'assignedCountyCode':'string[pyarrow]',
               'zipCode':'string[pyarrow]',
               'date':'date32[day][pyarrow]',
               'monthsRelativeToOct2021':'int32[pyarrow]',
@@ -126,20 +122,11 @@ data_types = {'state':'string[pyarrow]',
               'medianLegacyPremium':'float32[pyarrow]',
               'medianFullRiskPremium':'float32[pyarrow]',
               'relativeIncreasePremium':'float32[pyarrow]',
-              'treatmentLevel0':'int32[pyarrow]',
-              'treatmentLevel1':'int32[pyarrow]',
-              'treatmentLevel2':'int32[pyarrow]',
-              'treatmentLevel3':'int32[pyarrow]',
+              'treatmentLevel':'int32[pyarrow]',
               'medianHouseholdIncome':'float32[pyarrow]',
-              'incomeLevel0':'int32[pyarrow]',
-              'incomeLevel1':'int32[pyarrow]',
-              'incomeLevel2':'int32[pyarrow]',
-              'incomeLevel3':'int32[pyarrow]'}
+              'incomeLevel':'int32[pyarrow]'}
 
 policies = policies[data_types.keys()].astype(data_types).reset_index(drop=True)
 
 # Save as parquet file
 policies.to_parquet('NFIP_RR2_panel_data.parquet')
-
-# And also as CSV
-policies.to_csv('NFIP_RR2_panel_data.csv',index=False)
