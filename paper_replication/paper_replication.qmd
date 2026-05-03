@@ -2,7 +2,7 @@
 title: "POLI 784 - Replication of Gourevitch et al. (2025)"
 author: "Kieran Fitzmason"
 date: today
-format: html
+format: pdf
 editor: visual
 ---
 
@@ -34,27 +34,637 @@ These datasets were cleaned and merged using python code adapted from an ongoing
 
 Our final sample consists of 55 months of NFIP enrollment data from 15,912 unique zip codes observed between October 2020 and April 2025. When estimating the effects of Risk Rating 2.0 on the number of new policies, we focus on observations from the 12 months preceding and 36 months following October 2021; when estimating effects on the number of existing policies, we focus on observations from the 12 months preceding and 36 months following April 2022.
 
-Following the procedure of the authors, premium increases were discretized into four treatment levels containing an approximately equal number of units: 0-8% (control), 8-32% (level 1), 34-94% (level 2), and \>94% (level 3). Counts of policies-in-force (PIF) were log-transformed prior to analysis to ensure normality. This transformation is important to keep in mind when interpreting regression coefficients: when fitting a linear model of the form $\log(Y) = \beta_0 + \beta_1 X$, a one-unit increase in $X$ is associated with a $(e^{\beta_1} - 1) \times 100\%$ percentage change in $Y$.
+Following the procedure of the authors, premium increases were discretized into four treatment levels containing an approximately equal number of units: 0-8% (control), 8-32% (level 1), 34-94% (level 2), and \>94% (level 3).
 
 ```{r}
 
 # Load packages
 library(tidyverse)
-library(glue)
 library(fixest)
-library(fect)
+library(ggfixest)
+library(marginaleffects)
+library(patchwork)
+library(RColorBrewer)
 
 # Load data
 data <- readRDS("NFIP_RR2_panel_data.rds")
 
-# Print summary to console
-summary(data)
+# Display first few rows
+head(data)
+
+# Create indicators for different treatment levels
+data$treatmentLevel1 <- as.numeric(data$treatmentLevel == 1)
+data$treatmentLevel2 <- as.numeric(data$treatmentLevel == 2)
+data$treatmentLevel3 <- as.numeric(data$treatmentLevel == 3)
+
+# Create county-year-month indicator (used when specifying FEs)
+data$countyYearMonth <- paste(data$assignedCountyCode,substr(data$date,1,7),sep="-")
 ```
 
 # Main Analysis
 
+Here, we replicate the author's main results by fitting regression models of the following form:
+
+$$
+\log(Y_{it} + 1) = \sum_{k=-12}^{36} \left(\beta_k^1 D_i^1 + \beta_k^2 D_i^2 + \beta_k^3 D_i^3\right) \cdot \mathbb{1}\left[\tau_t=k\right] + \alpha_i + \gamma_{c(i)t} + \epsilon_{it}
+$$ {#eq-main-model}
+
+where $i$ and $t$ denote the zip code and month of observation, $Y_{it}$ is the number of policies-in-force, $D_i^g \in \left\{D_i^1, D_i^2, D_i^3 \right\}$ are indicators denoting membership in one of the three treatment groups, $\tau_t$ denotes the number of months relative to the Risk Rating 2.0 implementation date, $\alpha_i$ represents unit fixed effects, and $\gamma_{c(i)t}$ represents county-by-time fixed effects. This model resembles the classic two-way fixed effects (TWFE) estimator with one minor modification: instead of having time fixed effects that are uniform across the study area, they are allowed to vary by county. This relaxes the parallel trends assumption in a manner that helps to absorb the effect of county-level time-varying confounders (e.g., localized flood events or economic shocks). In this setup, the underlying assumption is that in the absence of treatment, treated and control zip codes within the same county would have followed parallel trends.
+
+Consistent with the procedure used in the study, counts of policies-in-force (PIF) were log-transformed prior to analysis. The authors did not describe how they dealt with observations with zero PIF whose logarithm is undefined; to prevent log-zero issues, we added a constant of one to the outcome variable prior to applying the transformation. This transformation is important to keep in mind when interpreting regression coefficients: when fitting a linear model of the form $\log(Y) = \beta_0 + \beta_1 X$, a one-unit increase in $X$ is associated with a $(e^{\beta_1} - 1) \times 100\%$ percentage change in $Y$. Because we are fitting a model of the form $\log(Y+1) = \beta_0 + \beta_1 X$, the interpretation of $\beta_1$ is not as clean, but should be roughly equivalent when $Y$ is large. Given that the median number of PIF among observations in our sample is 30, we believe the amount of bias introduced by this approximation should be small.
+
+```{r}
+
+# Helper function to extract dynamic treatment effects from fitted feols model
+extract_coefs <- function(mod,num.groups=1){
+  
+  # Initialize empty list
+  df_list <- list()
+  
+  # Specify which columns to include
+  cols <- c("group","x","is_ref","estimate","ci_low","ci_high")
+  
+  # Loop over treatment groups
+  for (i in 1:num.groups){
+    
+    group_df <- ggiplot(mod,i.select=i)$data[,cols]
+    group_df$group <- i
+    df_list[[i]] <- group_df
+  }
+  
+  # Concatenate data from each treatment group
+  df <- do.call(rbind,df_list)
+  df$group <- as.factor(df$group)
+  
+  return(df)
+}
+
+### *** Main analysis *** ###
+
+# Create logical arrays that we can use to subset data to 12 months before and 
+# 36 months following implementation of RR2.0 rates for new and existing policies
+new_period <- (data$monthsRelativeToOct2021 >= -12)&(data$monthsRelativeToOct2021 <= 36)
+exist_period <- (data$monthsRelativeToApr2022 >= -12)&(data$monthsRelativeToApr2022 <= 36)
+
+# Estimate effect of RR2.0 on number of new policies-in-force
+mod_newPIF <- feols(
+  fml = log(newPIF+1) ~ 
+    i(monthsRelativeToOct2021, treatmentLevel1, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel2, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[new_period,],
+  vcov = cluster ~ zipCode)
+
+# Estimate effect of RR2.0 on number of existing policies-in-force
+mod_existPIF <- feols(
+  fml = log(existPIF+1) ~ 
+    i(monthsRelativeToApr2022, treatmentLevel1, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel2, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[exist_period,],
+  vcov = cluster ~ zipCode)
+
+# Extract coefficients
+newPIF_coefs <- extract_coefs(mod_newPIF,num.groups=3)
+existPIF_coefs <- extract_coefs(mod_existPIF,num.groups=3)
+
+# Label treatment groups
+new_labels <- c("1" = "Q2: 8-34%", "2" = "Q3: 34-94%", "3" = "Q4: >94%")
+
+newPIF_coefs$group  <- factor(newPIF_coefs$group,  
+                               levels = c("1", "2", "3"), 
+                               labels = new_labels)
+
+existPIF_coefs$group <- factor(existPIF_coefs$group, 
+                                levels = c("1", "2", "3"), 
+                                labels = new_labels)
+```
+
+```{r}
+#| label: fig-main
+#| fig-width: 6
+#| fig-height: 6
+#| out-width: "90%"
+#| fig-align: "center"
+#| fig-cap: "Estimated effects of Risk Rating 2.0 on NFIP policies-in-force by month relative to date of implementation: A) Estimated coefficients for new policies; B) Estimated coefficients for existing policies. Error bars indicate 95% confidence intervals."
+
+## Plot results
+
+# Helper function to plot coefficients by treatment group
+plot_event_study <- function(coef_data, title, xlab, ylim, palette) {
+  ggplot(coef_data, aes(x = x, y = estimate, color = group)) +
+    geom_point(position = position_dodge(width = 0.3)) +
+    geom_line() + 
+    geom_errorbar(
+      aes(ymin = ci_low, ymax = ci_high),
+      width = 0.2,
+      position = position_dodge(width = 0.3)
+    ) +
+    geom_hline(yintercept = 0, linetype = "solid") +
+    geom_vline(xintercept = 0, linetype = "dashed") +
+    coord_cartesian(ylim = ylim) +
+    scale_x_continuous(breaks = scales::breaks_width(6)) +
+    scale_color_manual(values = blues) + 
+    theme_minimal() +
+    labs(
+      title = title,
+      x     = xlab,
+      y     = "Estimated Coefficient",
+      color = "Treatment Level"
+    ) +
+    theme(legend.position = "bottom")
+}
+
+# Specify color palette
+blues <- brewer.pal(8, "Blues")[c(4, 6, 8)]
+
+# Create plot for new policies
+p1 <- plot_event_study(
+  newPIF_coefs,
+  title = "Effect on new policies-in-force",
+  xlab  = "Months Relative to October 2021",
+  ylim = c(-0.5,0.05),
+  palette = blues
+)
+
+# Create plot for existing policies
+p2 <- plot_event_study(
+  existPIF_coefs,
+  title = "Effect on existing policies-in-force",
+  xlab  = "Months Relative to April 2022",
+  ylim = c(-0.15,0.05),
+  palette = blues
+)
+
+# Combine plots
+combined_plot <- (p1 + theme(legend.position = "none")) +
+            (p2 + theme(legend.position = "bottom")) +
+  plot_layout(nrow=2,ncol=1) + plot_annotation(tag_levels = 'A')
+
+combined_plot
+```
+
+For new policies, our estimated treatment effects appear very similar to those reported in Figure 2A of the original paper. In addition, none of the effect estimates from the pre-implementation period are statistically significant, which lends credence to the parallel trends assumption.
+
+For existing policies, our estimated treatment effects differ somewhat from those reported in Figure 1B of the original paper, particularly during the year before and after the implementation of Risk Rating 2.0. Notably, we observe pre-trends during the pre-implementation period, which indicates that the parallel trends assumption is likely violated. In the original paper, it is difficult to check for the presence of pre-trends due to the scaling of the y-axis in Figure 2B; however, it looks like some of the effect estimates from the the pre-implementation period may be significant.
+
 # Subgroup Analysis
 
-# Robustness Checks
+Here, we examine whether treatment effects are heterogeneous across policy-relevant subgroups.
+
+First, we examine whether policyholders located inside the FEMA Special Flood Hazard Area (SFHA) are responding differently to Risk Rating 2.0 than those located outside the SFHA. Because flood insurance is mandatory for homeowners located inside the SFHA with a federally-backed mortgage, we would expect to see a more muted response to premium increases than in areas outside the SFHA where purchase is voluntary.
+
+Second, we examine whether the effect of Risk Rating 2.0 on the number of policies-in-force varies by a zip code's median income in the 2022 American Community Survey. Because lower-income households may have diminished financial capacity to absorb premium increases, we would expect to see steeper declines in the number of policies-in-force in zip codes with lower median income.
+
+These subgroup analyses are implemented by fitting regression models of a similar functional form to @eq-main-model on subsets of the data. Following the presentation style of the original paper, we aggregate dynamic treatment effects over the final six months of the study period and report the average value for each group. This is accomplished using the `marginaleffects::hypotheses` function, which allows one to compute point estimates and confidence intervals for linear combinations of model coefficients. For each treatment level $g$, the average effect over the final six months of the study period is computed as:
+
+$$
+\bar{\beta^g} = \frac{1}{6} \sum_{k=31}^{36}\beta_k^g \space \forall \space g \in \left\{1,2,3\right\}
+$$ {#eq-linear-comb}
+
+Because we have a balanced panel, taking a simple average should be fine; however, unbalanced panels would likely require more sophisticated weighting techniques.
+
+```{r}
+
+# Helper function to aggregate dynamic treatment effects
+agg_dynamic_treatment_effects <- function(mod,time_var,treatment_var,periods){
+  num_periods <- length(periods)
+  coef_names <- paste("`",time_var,"::",periods,":",treatment_var,"`",sep="")
+  hstring <- paste(coef_names, collapse = " + ")
+  hstring <- paste("(",hstring,")/",num_periods," = 0",sep="")
+  res <- hypotheses(mod, hstring)
+  df <- data.frame(res[,c("estimate","conf.low","conf.high")])
+  return(df)
+}
+
+# Helper function to aggregate dynamic treatment effects for multiple treatment levels
+avg_across_levels <- function(mod,time_var,treatment_levels,periods){
+  
+  df_list <- list()
+  
+  for (i in seq_along(treatment_levels)){
+    
+    treatment_var <- treatment_levels[i]
+    df <- agg_dynamic_treatment_effects(mod,
+                                        time_var,
+                                        treatment_var,
+                                        periods)
+    df$treatment <- treatment_var
+    df_list[[i]] <- df
+  }
+  
+  df <- do.call(rbind,df_list)
+  return(df)
+}
+
+### *** Subgroup analysis: SFHA status *** ###
+
+## Fit models where outcome is PIF inside the SFHA
+
+# New policies
+mod_newSfhaPIF <- feols(
+  fml = log(newSfhaPIF+1) ~ 
+    i(monthsRelativeToOct2021, treatmentLevel1, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel2, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[new_period,],
+  vcov = cluster ~ zipCode)
+
+# Existing policies
+mod_existSfhaPIF <- feols(
+  fml = log(existSfhaPIF+1) ~ 
+    i(monthsRelativeToApr2022, treatmentLevel1, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel2, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[exist_period,],
+  vcov = cluster ~ zipCode)
+
+## Fit models where outcome is PIF outside the SFHA
+
+# New policies
+mod_newNonSfhaPIF <- feols(
+  fml = log(newNonSfhaPIF+1) ~ 
+    i(monthsRelativeToOct2021, treatmentLevel1, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel2, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[new_period,],
+  vcov = cluster ~ zipCode)
+
+# Existing policies
+mod_existNonSfhaPIF <- feols(
+  fml = log(existNonSfhaPIF+1) ~ 
+    i(monthsRelativeToApr2022, treatmentLevel1, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel2, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[exist_period,],
+  vcov = cluster ~ zipCode)
+
+## Compute average effect over last 6 months of study period
+
+treatment_levels <- paste("treatmentLevel",1:3,sep="")
+periods <- 31:36
+
+# New PIF, inside SFHA
+avg_newSfhaPIF <- avg_across_levels(mod_newSfhaPIF,
+                                    "monthsRelativeToOct2021",
+                                    treatment_levels,
+                                    periods)
+avg_newSfhaPIF$group <- "SFHA"
+avg_newSfhaPIF$outcome <- "newPIF"
+
+# New PIF, outside SFHA
+avg_newNonSfhaPIF <- avg_across_levels(mod_newNonSfhaPIF,
+                                       "monthsRelativeToOct2021",
+                                       treatment_levels,
+                                       periods)
+avg_newNonSfhaPIF$group <- "Non-SFHA"
+avg_newNonSfhaPIF$outcome <- "newPIF"
+
+# Exist PIF, inside SFHA
+avg_existSfhaPIF <- avg_across_levels(mod_existSfhaPIF,
+                                       "monthsRelativeToApr2022",
+                                       treatment_levels,
+                                       periods)
+avg_existSfhaPIF$group <- "SFHA"
+avg_existSfhaPIF$outcome <- "existPIF"
+
+# Exist PIF, outside SFHA
+avg_existNonSfhaPIF <- avg_across_levels(mod_existNonSfhaPIF,
+                                       "monthsRelativeToApr2022",
+                                       treatment_levels,
+                                       periods)
+avg_existNonSfhaPIF$group <- "Non-SFHA"
+avg_existNonSfhaPIF$outcome <- "existPIF"
+
+# Combine data
+avg_by_sfha <- rbind(avg_newSfhaPIF,avg_newNonSfhaPIF,avg_existSfhaPIF,avg_existNonSfhaPIF)
+
+# Manually set order of factor variables (default is alphabetical)
+avg_by_sfha$group <- factor(avg_by_sfha$group,levels=c("SFHA","Non-SFHA"))
+avg_by_sfha$outcome <- factor(avg_by_sfha$outcome,levels=c("newPIF","existPIF"))
+
+# Label treatment groups
+new_labels <- c("1" = "Q2 treatment", "2" = "Q3 treatment", "3" = "Q4 treatment")
+avg_by_sfha$treatment  <- factor(avg_by_sfha$treatment, 
+                                 levels = c("treatmentLevel1", "treatmentLevel2", "treatmentLevel3"), 
+                                 labels = new_labels)
+```
+
+```{r}
+#| label: fig-subgroup-sfha
+#| fig-width: 6
+#| fig-height: 6
+#| out-width: "90%"
+#| fig-align: "center"
+#| fig-cap: "Averaged effects of Risk Rating 2.0 on NFIP policies-in-force during the final six months of the study period: A) Estimated coefficients for new policies by SFHA status; B) Estimated coefficients for existing policies by SFHA status."
+
+## Plot results
+p1 <- ggplot(avg_by_sfha[avg_by_sfha$outcome=="newPIF",],aes(x=group,y=estimate,color=group)) + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_point(position = position_dodge(width = 0.3)) +
+  geom_errorbar(
+      aes(ymin = conf.low, ymax = conf.high),
+      width = 0.1,
+      position = position_dodge(width = 0.3)
+    ) +
+  facet_grid(cols=vars(treatment),switch="x") + 
+  theme_minimal() + 
+  labs(
+      title = "Effect on new policies-in-force",
+      x     = "",
+      y     = "Estimated\nCoefficient",
+      color = ""
+    ) +
+    theme(legend.position = "bottom",
+          panel.border = element_rect(colour = "black", fill=NA, linewidth=1),
+          axis.text.x = element_blank(),
+          plot.title = element_text(size = 12))
+
+p2 <- ggplot(avg_by_sfha[avg_by_sfha$outcome=="existPIF",],aes(x=group,y=estimate,color=group)) + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_point(position = position_dodge(width = 0.3)) +
+  geom_errorbar(
+      aes(ymin = conf.low, ymax = conf.high),
+      width = 0.1,
+      position = position_dodge(width = 0.3)
+    ) +
+  facet_grid(cols=vars(treatment),switch="x") + 
+  theme_minimal() + 
+  labs(
+      title = "Effect on existing policies-in-force",
+      x     = "",
+      y     = "Estimated\nCoefficient",
+      color = ""
+    ) +
+    theme(legend.position = "bottom",
+          panel.border = element_rect(colour = "black", fill=NA, linewidth=1),
+          axis.text.x = element_blank(),
+          plot.title = element_text(size = 12))
+
+#Combine plots
+combined_plot <- (p1 + theme(legend.position = "none")) +
+            (p2 + theme(legend.position = "bottom")) +
+  plot_layout(nrow=2,ncol=1) + plot_annotation(tag_levels = 'A')
+
+combined_plot
+
+```
+
+When stratifying effect estimates by SFHA status, we observe results that are qualitatively similar to those reported in Figures 3A and 3B of Gourevitch et al. In general, Risk Rating 2.0 had a greater impact on flood insurance uptake in areas outside the SFHA where purchase is voluntary; this effect was especially pronounced for new policies. However, the estimated magnitude of this effect is often smaller than those reported by Gourevitch et al. For example, we estimate that zip codes in the Q4 treatment group saw a 25-30% reduction in the number of new non-SFHA policies, while Gourevitch et al. report a roughly 40% reduction for this group. Because we lack information on the exact method that the authors used to aggregate dynamic treatment effects over periods of interest, this could potentially be attributable to methodological differences.
+
+```{r}
+
+### *** Subgroup analysis: Income level *** ###
+
+# Create filters that we can use to subset zip codes by income
+Q1_income <- (data$incomeLevel==0)
+Q2_income <- (data$incomeLevel==1)
+Q3_income <- (data$incomeLevel==2)
+Q4_income <- (data$incomeLevel==3)
+
+## Fit models for zip codes with Q1 income level
+
+# New policies, Q1 income
+mod_newPIF_incQ1 <- feols(
+  fml = log(newPIF+1) ~ 
+    i(monthsRelativeToOct2021, treatmentLevel1, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel2, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[new_period&Q1_income,],
+  vcov = cluster ~ zipCode)
+
+# Existing policies, Q1 income
+mod_existPIF_incQ1 <- feols(
+  fml = log(existPIF+1) ~ 
+    i(monthsRelativeToApr2022, treatmentLevel1, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel2, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[exist_period&Q1_income,],
+  vcov = cluster ~ zipCode)
+
+## Fit models for zip codes with Q2 income level
+
+# New policies, Q2 income
+mod_newPIF_incQ2 <- feols(
+  fml = log(newPIF+1) ~ 
+    i(monthsRelativeToOct2021, treatmentLevel1, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel2, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[new_period&Q2_income,],
+  vcov = cluster ~ zipCode)
+
+# Existing policies, Q2 income
+mod_existPIF_incQ2 <- feols(
+  fml = log(existPIF+1) ~ 
+    i(monthsRelativeToApr2022, treatmentLevel1, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel2, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[exist_period&Q2_income,],
+  vcov = cluster ~ zipCode)
+
+## Fit models for zip codes with Q3 income level
+
+# New policies, Q3 income
+mod_newPIF_incQ3 <- feols(
+  fml = log(newPIF+1) ~ 
+    i(monthsRelativeToOct2021, treatmentLevel1, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel2, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[new_period&Q3_income,],
+  vcov = cluster ~ zipCode)
+
+# Existing policies, Q3 income
+mod_existPIF_incQ3 <- feols(
+  fml = log(existPIF+1) ~ 
+    i(monthsRelativeToApr2022, treatmentLevel1, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel2, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[exist_period&Q3_income,],
+  vcov = cluster ~ zipCode)
+
+## Fit models for zip codes with Q4 income level
+
+# New policies, Q4 income
+mod_newPIF_incQ4 <- feols(
+  fml = log(newPIF+1) ~ 
+    i(monthsRelativeToOct2021, treatmentLevel1, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel2, -1) + 
+    i(monthsRelativeToOct2021, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[new_period&Q4_income,],
+  vcov = cluster ~ zipCode)
+
+# Existing policies, Q4 income
+mod_existPIF_incQ4 <- feols(
+  fml = log(existPIF+1) ~ 
+    i(monthsRelativeToApr2022, treatmentLevel1, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel2, -1) + 
+    i(monthsRelativeToApr2022, treatmentLevel3, -1) | zipCode + countyYearMonth,
+  data = data[exist_period&Q4_income,],
+  vcov = cluster ~ zipCode)
+
+## Compute average effect over last 6 months of study period
+
+treatment_levels <- paste("treatmentLevel",1:3,sep="")
+periods <- 31:36
+
+# New PIF, income Q1
+avg_newPIF_incQ1 <- avg_across_levels(mod_newPIF_incQ1,
+                                      "monthsRelativeToOct2021",
+                                      treatment_levels,
+                                      periods)
+avg_newPIF_incQ1$group <- "Income Q1"
+avg_newPIF_incQ1$outcome <- "newPIF"
+
+# New PIF, income Q2
+avg_newPIF_incQ2 <- avg_across_levels(mod_newPIF_incQ2,
+                                      "monthsRelativeToOct2021",
+                                      treatment_levels,
+                                      periods)
+avg_newPIF_incQ2$group <- "Income Q2"
+avg_newPIF_incQ2$outcome <- "newPIF"
+
+# New PIF, income Q3
+avg_newPIF_incQ3 <- avg_across_levels(mod_newPIF_incQ3,
+                                      "monthsRelativeToOct2021",
+                                      treatment_levels,
+                                      periods)
+avg_newPIF_incQ3$group <- "Income Q3"
+avg_newPIF_incQ3$outcome <- "newPIF"
+
+# New PIF, income Q4
+avg_newPIF_incQ4 <- avg_across_levels(mod_newPIF_incQ4,
+                                      "monthsRelativeToOct2021",
+                                      treatment_levels,
+                                      periods)
+avg_newPIF_incQ4$group <- "Income Q4"
+avg_newPIF_incQ4$outcome <- "newPIF"
+
+# Exist PIF, income Q1
+avg_existPIF_incQ1 <- avg_across_levels(mod_existPIF_incQ1,
+                                        "monthsRelativeToApr2022",
+                                        treatment_levels,
+                                        periods)
+avg_existPIF_incQ1$group <- "Income Q1"
+avg_existPIF_incQ1$outcome <- "existPIF"
+
+# Exist PIF, income Q2
+avg_existPIF_incQ2 <- avg_across_levels(mod_existPIF_incQ2,
+                                        "monthsRelativeToApr2022",
+                                        treatment_levels,
+                                        periods)
+avg_existPIF_incQ2$group <- "Income Q2"
+avg_existPIF_incQ2$outcome <- "existPIF"
+
+# Exist PIF, income Q3
+avg_existPIF_incQ3 <- avg_across_levels(mod_existPIF_incQ3,
+                                        "monthsRelativeToApr2022",
+                                        treatment_levels,
+                                        periods)
+avg_existPIF_incQ3$group <- "Income Q3"
+avg_existPIF_incQ3$outcome <- "existPIF"
+
+# Exist PIF, income Q4
+avg_existPIF_incQ4 <- avg_across_levels(mod_existPIF_incQ4,
+                                        "monthsRelativeToApr2022",
+                                        treatment_levels,
+                                        periods)
+avg_existPIF_incQ4$group <- "Income Q4"
+avg_existPIF_incQ4$outcome <- "existPIF"
+
+# Combine data
+avg_by_income <- rbind(avg_newPIF_incQ1,
+                       avg_newPIF_incQ2,
+                       avg_newPIF_incQ3,
+                       avg_newPIF_incQ4,
+                       avg_existPIF_incQ1,
+                       avg_existPIF_incQ2,
+                       avg_existPIF_incQ3,
+                       avg_existPIF_incQ4)
+
+# Manually set order of factor variables (default is alphabetical)
+avg_by_income$group <- factor(avg_by_income$group,
+                              levels=c("Income Q1",
+                                       "Income Q2",
+                                       "Income Q3",
+                                       "Income Q4"))
+avg_by_income$outcome <- factor(avg_by_income$outcome,levels=c("newPIF","existPIF"))
+
+# Label treatment groups
+new_labels <- c("1" = "Q2 treatment", "2" = "Q3 treatment", "3" = "Q4 treatment")
+avg_by_income$treatment  <- factor(avg_by_income$treatment, 
+                                   levels = c("treatmentLevel1",
+                                              "treatmentLevel2",
+                                              "treatmentLevel3"), 
+                                   labels = new_labels)
+```
+
+```{r}
+#| label: fig-subgroup-income
+#| fig-width: 6
+#| fig-height: 6
+#| out-width: "90%"
+#| fig-align: "center"
+#| fig-cap: "Averaged effects of Risk Rating 2.0 on NFIP policies-in-force during the final six months of the study period: A) Estimated coefficients for new policies by median household income; B) Estimated coefficients for existing policies by median household income."
+
+## Plot results
+
+## Plot results
+p1 <- ggplot(avg_by_income[avg_by_income$outcome=="newPIF",],aes(x=group,y=estimate,color=group)) + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_point(position = position_dodge(width = 0.3)) +
+  geom_errorbar(
+      aes(ymin = conf.low, ymax = conf.high),
+      width = 0.1,
+      position = position_dodge(width = 0.3)
+    ) +
+  facet_grid(cols=vars(treatment),switch="x") + 
+  theme_minimal() + 
+  labs(
+      title = "Effect on new policies-in-force",
+      x     = "",
+      y     = "Estimated\nCoefficient",
+      color = ""
+    ) +
+    theme(legend.position = "bottom",
+          panel.border = element_rect(colour = "black", fill=NA, linewidth=1),
+          axis.text.x = element_blank(),
+          plot.title = element_text(size = 12))
+
+p2 <- ggplot(avg_by_income[avg_by_income$outcome=="existPIF",],aes(x=group,y=estimate,color=group)) + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_point(position = position_dodge(width = 0.3)) +
+  geom_errorbar(
+      aes(ymin = conf.low, ymax = conf.high),
+      width = 0.1,
+      position = position_dodge(width = 0.3)
+    ) +
+  facet_grid(cols=vars(treatment),switch="x") + 
+  theme_minimal() + 
+  labs(
+      title = "Effect on existing policies-in-force",
+      x     = "",
+      y     = "Estimated\nCoefficient",
+      color = ""
+    ) +
+    theme(legend.position = "bottom",
+          panel.border = element_rect(colour = "black", fill=NA, linewidth=1),
+          axis.text.x = element_blank(),
+          plot.title = element_text(size = 12))
+
+#Combine plots
+combined_plot <- (p1 + theme(legend.position = "none")) +
+            (p2 + theme(legend.position = "bottom")) +
+  plot_layout(nrow=2,ncol=1) + plot_annotation(tag_levels = 'A')
+
+combined_plot
+
+```
+
+When stratifying effect estimates by income quartile, we observe results that that differ somewhat from those reported in Figures 3C and 3D of Gourevitch et al. While we both find that the effect of Risk Rating 2.0 on flood insurance uptake tends to be stronger in lower-income zip codes, I observe a lower amount of heterogeneity than Gourevitch et al. For example, we estimate that zip codes in the Q4 treatment group experienced reductions in the number of new PIF that ranged between 25% and 35% depending on their income quartile, while Gourevitch et al. report reductions ranging between 35% and 60% depending on income quartile. This could be attributable to methodological differences in how we aggregated dynamic treatment effects over the final six months of the study period, or due to differences in the method used to group zip codes by income (e.g., quartile among zip codes in sample vs. quartile among all zip codes nationwide).
 
 # Conclusions
+
+Our analysis of NFIP enrollment data confirms the main finding of [Gourevitch et al. (2025)](https://doi.org/10.63024/32za-vmy3) that premium increases under Risk Rating 2.0 have caused a reduction in flood insurance uptake in the United States. This effect is strongest for new flood insurance policies that are immediately subject to the full-risk rates; existing policies, whose rate increases are capped at 18% per year by statue, are still in the process of being transitioned to full-risk rates and thus have seen smaller declines. The presence of a dose-response relationship between the median premium increase experienced by a zip code and the size of the estimated effect on policy enrollment suggests that the observed relationship is likely to be causal in nature. However, the presence of slight pre-trends among counts of existing policies-in-force suggests that the parallel trends assumption may be violated for this group. Additional robustness checks such as placebo equivalence testing could help to further characterize the severity of pre-trends. 
+
+
+
