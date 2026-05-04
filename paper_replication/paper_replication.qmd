@@ -34,7 +34,7 @@ These datasets were cleaned and merged using python code adapted from an ongoing
 
 Our final sample consists of 55 months of NFIP enrollment data from 15,912 unique zip codes observed between October 2020 and April 2025. When estimating the effects of Risk Rating 2.0 on the number of new policies, we focus on observations from the 12 months preceding and 36 months following October 2021; when estimating effects on the number of existing policies, we focus on observations from the 12 months preceding and 36 months following April 2022.
 
-Following the procedure of the authors, premium increases were discretized into four treatment levels containing an approximately equal number of units: 0-8% (control), 8-32% (level 1), 34-94% (level 2), and \>94% (level 3).
+Following the procedure of the authors, premium increases were discretized into four treatment levels containing an approximately equal number of units: 0-8% (control), 8-34% (level 1), 34-94% (level 2), and \>94% (level 3).
 
 ```{r}
 
@@ -664,7 +664,7 @@ When stratifying effect estimates by income quartile, we observe results that th
 
 # Conclusions
 
-Our analysis of NFIP enrollment data confirms the main finding of [Gourevitch et al. (2025)](https://doi.org/10.63024/32za-vmy3) that premium increases under Risk Rating 2.0 have caused a reduction in flood insurance uptake in the United States. This effect is strongest for new flood insurance policies that are immediately subject to the full-risk rates; existing policies, whose rate increases are capped at 18% per year by statue, are still in the process of being transitioned to full-risk rates and thus have seen smaller declines. The presence of a dose-response relationship between the median premium increase experienced by a zip code and the size of the estimated effect on policy enrollment suggests that the observed relationship is likely to be causal in nature. However, the presence of slight pre-trends among counts of existing policies-in-force suggests that the parallel trends assumption may be violated for this group. Additional robustness checks such as placebo equivalence testing could help to further characterize the severity of pre-trends. 
+Our analysis of NFIP enrollment data confirms the main finding of [Gourevitch et al. (2025)](https://doi.org/10.63024/32za-vmy3) that premium increases under Risk Rating 2.0 have caused a reduction in flood insurance uptake in the United States. This effect is strongest for new flood insurance policies that are immediately subject to the full-risk rates; existing policies *whose rate increases are capped at 18% per year) are still in the process of being transitioned to full-risk rates and thus have seen smaller declines in enrollment. The presence of a dose-response relationship between the median premium increase experienced by a zip code and policy enrollment trends provides another piece of evidence that the observed relationship is likely causal in nature. However, the presence of slight pre-trends among counts of existing policies-in-force suggests that the parallel trends assumption may be violated for this group. Additional robustness checks such as placebo equivalence testing could help to further characterize the severity of pre-trends. 
 
 
 
